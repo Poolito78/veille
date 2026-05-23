@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import { UserPlus, Loader2, Trash2, Shield } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
 import { useRole, listVeilleUsers, setUserRole, removeUser } from '@/lib/roles';
 import type { VeilleUser, Role } from '@/lib/roles';
 import { Button } from '@/components/ui/button';
@@ -46,25 +45,22 @@ export default function Admin() {
     setInviting(true);
     setInviteMsg(null);
 
-    const { data, error } = await supabase.auth.admin.inviteUserByEmail(inviteEmail.trim(), {
-      redirectTo: `${window.location.origin}/auth`,
-      data: { display_name: inviteDisplayName.trim() || undefined },
+    const resp = await fetch('/api/invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: inviteEmail.trim(),
+        role: inviteRole,
+        displayName: inviteDisplayName.trim() || undefined,
+      }),
     });
 
-    if (error) {
-      setInviteMsg({ type: 'error', text: error.message });
+    const result = await resp.json() as { success?: boolean; error?: string };
+
+    if (!resp.ok || result.error) {
+      setInviteMsg({ type: 'error', text: result.error || 'Erreur lors de l\'invitation' });
       setInviting(false);
       return;
-    }
-
-    // Insert role row
-    if (data.user) {
-      await supabase.from('veille_roles').upsert({
-        user_id: data.user.id,
-        role: inviteRole,
-        display_name: inviteDisplayName.trim() || inviteEmail.trim(),
-        invited_at: new Date().toISOString(),
-      });
     }
 
     setInviteMsg({ type: 'success', text: `Invitation envoyée à ${inviteEmail}` });
