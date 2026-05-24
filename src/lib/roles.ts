@@ -6,10 +6,10 @@ export type Role = 'admin' | 'contributeur' | 'lecteur';
 export interface VeilleUser {
   id: string;
   email: string;
-  role: Role;
   displayName?: string;
+  veilleRole: Role | null;   // null = pas d'accès Veille
+  crmAccess: boolean;
   invitedAt?: string;
-  lastSignIn?: string;
 }
 
 // ── Hook: current user's role ──────────────────────────────────────────────
@@ -36,44 +36,44 @@ export function useRole() {
     }
     load();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      load();
-    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => { load(); });
     return () => subscription.unsubscribe();
   }, []);
 
-  return { role, userId, loading, isAdmin: role === 'admin', canEdit: role === 'admin' || role === 'contributeur' };
+  return {
+    role, userId, loading,
+    isAdmin: role === 'admin',
+    canEdit: role === 'admin' || role === 'contributeur',
+  };
 }
 
-// ── Admin: list all users with roles ──────────────────────────────────────
+// ── Admin: list all users ──────────────────────────────────────────────────
 
 export async function listVeilleUsers(): Promise<VeilleUser[]> {
   const { data, error } = await supabase
     .from('veille_roles')
-    .select('user_id, role, display_name, invited_at')
+    .select('user_id, role, display_name, email, crm_access, invited_at')
     .order('invited_at', { ascending: false });
 
   if (error || !data) return [];
 
-  return data.map(r => ({
+  return data.map((r: any) => ({
     id: r.user_id,
-    email: r.display_name || r.user_id,
-    role: r.role as Role,
+    email: r.email || r.user_id,
     displayName: r.display_name || undefined,
+    veilleRole: r.role as Role | null,
+    crmAccess: r.crm_access ?? false,
     invitedAt: r.invited_at?.split('T')[0] || undefined,
   }));
 }
 
-export async function setUserRole(userId: string, role: Role) {
+export async function updateUserAccess(userId: string, veilleRole: Role | null, crmAccess: boolean) {
   return supabase
     .from('veille_roles')
-    .update({ role })
+    .update({ role: veilleRole || 'lecteur', crm_access: crmAccess })
     .eq('user_id', userId);
 }
 
 export async function removeUser(userId: string) {
-  return supabase
-    .from('veille_roles')
-    .delete()
-    .eq('user_id', userId);
+  return supabase.from('veille_roles').delete().eq('user_id', userId);
 }
