@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label';
 
 type Mode = 'login' | 'reset' | 'set-password';
 
+const RESET_COOLDOWN = 60; // secondes
+
 export default function Auth() {
   const { session } = useAuth();
   const navigate = useNavigate();
@@ -18,6 +20,23 @@ export default function Auth() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [cooldown, setCooldown] = useState(0);
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function startCooldown() {
+    setCooldown(RESET_COOLDOWN);
+    cooldownRef.current = setInterval(() => {
+      setCooldown(prev => {
+        if (prev <= 1) {
+          clearInterval(cooldownRef.current!);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }
+
+  useEffect(() => () => { if (cooldownRef.current) clearInterval(cooldownRef.current); }, []);
 
   // Detect password-recovery flow from email link
   useEffect(() => {
@@ -52,10 +71,17 @@ export default function Auth() {
       redirectTo: `${window.location.origin}/auth`,
     });
     if (error) {
-      setMessage({ type: 'error', text: error.message });
+      const isRateLimit = error.message.toLowerCase().includes('rate limit') || error.status === 429;
+      setMessage({
+        type: 'error',
+        text: isRateLimit
+          ? 'Trop de tentatives. Attendez avant de réessayer.'
+          : error.message,
+      });
     } else {
       setMessage({ type: 'success', text: 'Email envoyé ! Vérifiez votre boîte mail.' });
     }
+    startCooldown();
     setLoading(false);
   };
 
@@ -138,14 +164,18 @@ export default function Auth() {
                     {message.text}
                   </p>
                 )}
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Envoyer le lien
+                <Button type="submit" className="w-full" disabled={loading || cooldown > 0}>
+                  {loading
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : cooldown > 0
+                      ? `Réessayer dans ${cooldown}s`
+                      : 'Envoyer le lien'
+                  }
                 </Button>
               </form>
               <button
                 type="button"
-                onClick={() => { setMode('login'); setMessage(null); }}
+                onClick={() => { setMode('login'); setMessage(null); setCooldown(0); }}
                 className="text-sm text-muted-foreground hover:text-foreground w-full text-center"
               >
                 ← Retour à la connexion
