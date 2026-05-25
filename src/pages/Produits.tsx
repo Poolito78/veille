@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
 import { Plus, Search, Upload, Loader2, Check, X, Pencil, Trash2 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
-import { useConcurrents } from '@/lib/concurrents';
+import { useConcurrents, formatCreateur } from '@/lib/concurrents';
 import type { ConcurrentProduit } from '@/lib/concurrents';
 import { useRole } from '@/lib/roles';
 import { parseExcel } from '@/lib/parseExcel';
@@ -287,8 +287,13 @@ export default function Produits() {
               <tr>
                 <th className="text-left px-4 py-2.5 font-medium">Produit</th>
                 <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">Concurrent</th>
+                <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">Référence</th>
                 <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">Catégorie</th>
                 <th className="text-right px-4 py-2.5 font-medium">Prix HT</th>
+                <th className="text-left px-4 py-2.5 font-medium hidden lg:table-cell">Description</th>
+                <th className="text-left px-4 py-2.5 font-medium hidden lg:table-cell">Client source</th>
+                <th className="text-left px-4 py-2.5 font-medium hidden lg:table-cell">Saisi par</th>
+                <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">Date</th>
                 {canEdit && <th className="w-20" />}
               </tr>
             </thead>
@@ -301,24 +306,34 @@ export default function Produits() {
                 >
                   <td className="px-4 py-2.5">
                     <p className="font-medium">{p.nom}</p>
-                    {p.reference && <p className="text-xs text-muted-foreground">{p.reference}</p>}
+                    {p.reference && <p className="md:hidden text-xs text-muted-foreground">{p.reference}</p>}
+                    <p className="text-xs text-muted-foreground sm:hidden">{concName(p.concurrentId)}</p>
+                    {p.categorie && <p className="md:hidden mt-0.5"><Badge variant="outline" className="text-[10px] py-0 h-4">{p.categorie}</Badge></p>}
+                    {p.description && <p className="lg:hidden text-xs text-muted-foreground mt-0.5 truncate max-w-48">{p.description}</p>}
                     {(p.clientNom || p.informateur) && (
-                      <p className="text-xs text-muted-foreground mt-0.5">
+                      <p className="text-xs text-muted-foreground mt-0.5 lg:hidden">
                         {p.clientNom && <span>📍 {p.clientNom}</span>}
                         {p.clientNom && p.informateur && <span className="mx-1">·</span>}
                         {p.informateur && <span>👤 {p.informateur}</span>}
                       </p>
                     )}
-                    <p className="text-xs text-muted-foreground sm:hidden">{concName(p.concurrentId)}</p>
-                    {p.categorie && <p className="md:hidden mt-0.5"><Badge variant="outline" className="text-[10px] py-0 h-4">{p.categorie}</Badge></p>}
                   </td>
                   <td className="px-4 py-2.5 hidden sm:table-cell text-muted-foreground">{concName(p.concurrentId)}</td>
+                  <td className="px-4 py-2.5 hidden md:table-cell text-xs text-muted-foreground font-mono">{p.reference || '—'}</td>
                   <td className="px-4 py-2.5 hidden md:table-cell">
                     {p.categorie ? <Badge variant="outline">{p.categorie}</Badge> : <span className="text-muted-foreground">—</span>}
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     <p className="font-medium">{p.prixHT != null ? p.prixHT.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }) : '—'}</p>
-                    {p.dateRenseignement && <p className="text-xs text-muted-foreground">{new Date(p.dateRenseignement).toLocaleDateString('fr-FR')}</p>}
+                    <p className="md:hidden text-xs text-muted-foreground">
+                      {p.dateRenseignement ? new Date(p.dateRenseignement + 'T00:00:00').toLocaleDateString('fr-FR') : p.createdAt}
+                    </p>
+                  </td>
+                  <td className="px-4 py-2.5 hidden lg:table-cell text-sm text-muted-foreground max-w-40 truncate">{p.description || '—'}</td>
+                  <td className="px-4 py-2.5 hidden lg:table-cell text-xs text-muted-foreground">{p.clientNom || '—'}</td>
+                  <td className="px-4 py-2.5 hidden lg:table-cell text-xs text-muted-foreground">{p.informateur || formatCreateur(p.createdByEmail)}</td>
+                  <td className="px-4 py-2.5 hidden md:table-cell text-xs text-muted-foreground">
+                    {p.dateRenseignement ? new Date(p.dateRenseignement + 'T00:00:00').toLocaleDateString('fr-FR') : p.createdAt}
                   </td>
                   {canEdit && (
                     <td className="px-2 py-2.5" onClick={e => e.stopPropagation()}>
