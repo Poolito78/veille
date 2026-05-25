@@ -97,7 +97,34 @@ async function callAI(texte: string): Promise<ExtractedProduit[]> {
     return parseJsonArray(text);
   }
 
-  throw new Error('Aucune clé API configurée (VITE_GROQ_API_KEY, VITE_GEMINI_API_KEY ou VITE_OPENROUTER_API_KEY)');
+  throw new Error('Aucune clé IA configurée. Ajoutez VITE_GROQ_API_KEY, VITE_GEMINI_API_KEY ou VITE_OPENROUTER_API_KEY dans les variables d\'environnement Vercel. Pour un fichier CSV/Excel, l\'import sans IA est possible — renommez les colonnes : nom, reference, categorie, prixHT.');
+}
+
+/** Essai d'import direct CSV/Excel sans IA (colonnes nommées). */
+function tryDirectParse(texte: string): ExtractedProduit[] {
+  const lines = texte.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) return [];
+  const sep = lines[0].includes(';') ? ';' : ',';
+  const headers = lines[0].split(sep).map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
+  const idx = (names: string[]) => headers.findIndex(h => names.some(n => h.includes(n)));
+  const iNom = idx(['nom', 'designation', 'libelle', 'produit', 'article', 'name']);
+  const iRef = idx(['ref', 'reference', 'code']);
+  const iCat = idx(['cat', 'famille', 'type', 'family']);
+  const iPrix = idx(['prix', 'price', 'tarif', 'ht', 'montant']);
+  const iDesc = idx(['desc', 'details', 'comment']);
+  if (iNom < 0) return [];
+  return lines.slice(1).map((line, i) => {
+    const cols = line.split(sep).map(c => c.replace(/^["']|["']$/g, '').trim());
+    return {
+      _id: String(i),
+      nom: cols[iNom] || '',
+      reference: iRef >= 0 ? cols[iRef] || '' : '',
+      categorie: iCat >= 0 ? cols[iCat] || '' : '',
+      prixHT: iPrix >= 0 ? cols[iPrix]?.replace(',', '.') || '' : '',
+      description: iDesc >= 0 ? cols[iDesc] || '' : '',
+      selected: true,
+    };
+  }).filter(p => p.nom);
 }
 
 async function extractText(file: File): Promise<string> {
@@ -139,6 +166,8 @@ export default function Produits() {
   const [dragOver, setDragOver] = useState(false);
   const dragCounter = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Empêche Radix de fermer le dialog quand le file-picker natif vole le focus
+  const filePickerActiveRef = useRef(false);
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showNomSuggestions, setShowNomSuggestions] = useState(false);
@@ -210,6 +239,7 @@ export default function Produits() {
   // ── Import tarif ──
 
   const handleFiles = useCallback(async (files: FileList | null) => {
+    filePickerActiveRef.current = false;
     if (!files || files.length === 0) return;
     const file = files[0];
     if (!file.name.match(/\.(pdf|xlsx?|csv|ods)$/i)) {
@@ -221,8 +251,25 @@ export default function Produits() {
     setExtracted([]);
     try {
       const text = await extractText(file);
-      const results = await callAI(text);
-      setExtracted(results.map((r, i) => ({ ...r, _id: String(i), selected: true })));
+      // Essai IA en premier
+      const hasKey = !!(import.meta.env.VITE_GROQ_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_OPENROUTER_API_KEY);
+      let results: ExtractedProduit[] = [];
+      if (hasKey) {
+        results = await callAI(text);
+      }
+      // Fallback : parse direct pour CSV/Excel si pas d'IA ou résultat vide
+      if (results.length === 0 && file.name.match(/\.(xlsx?|csv|ods)$/i)) {
+        results = tryDirectParse(text);
+      }
+      if (results.length === 0) {
+        if (!hasKey) {
+          setImportError('Aucune clé IA configurée. Pour un PDF, ajoutez VITE_GROQ_API_KEY dans Vercel. Pour un CSV/Excel, renommez les colonnes : nom, reference, categorie, prixHT.');
+        } else {
+          setImportError('Aucun produit trouvé dans ce document. Vérifiez le format du fichier.');
+        }
+      } else {
+        setExtracted(results.map((r, i) => ({ ...r, _id: String(i), selected: true })));
+      }
     } catch (e: any) {
       setImportError(e.message || 'Erreur lors de l\'analyse.');
     }
@@ -465,8 +512,14 @@ export default function Produits() {
       </Dialog>
 
       {/* Import Dialog */}
-      <Dialog open={importOpen} onOpenChange={v => { if (!analysing) setImportOpen(v); }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+      <Dialog open={importOpen} onOpenChange={v => { if (!analysing && !filePickerActiveRef.current) setImportOpen(v); }}>
+        <DialogContent
+          className="max-w-2xl max-h-[90vh] flex flex-col"
+          onInteractOutside={e => {
+            // Empêche la fermeture quand le file-picker natif vole le focus
+            if (filePickerActiveRef.current) e.preventDefault();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Importer un tarif concurrent</DialogTitle>
           </DialogHeader>
@@ -489,12 +542,18 @@ export default function Produits() {
                 onDragOver={e => e.preventDefault()}
                 onDragLeave={() => { dragCounter.current--; if (dragCounter.current === 0) setDragOver(false); }}
                 onDrop={e => { e.preventDefault(); dragCounter.current = 0; setDragOver(false); handleFiles(e.dataTransfer.files); }}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => { filePickerActiveRef.current = true; fileInputRef.current?.click(); }}
               >
                 <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
                 <p className="font-medium">Glissez votre tarif ici</p>
                 <p className="text-sm text-muted-foreground mt-1">PDF, Excel (.xlsx, .xls), CSV — analyse IA automatique</p>
-                <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.xlsx,.xls,.csv,.ods" onChange={e => handleFiles(e.target.files)} />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept=".pdf,.xlsx,.xls,.csv,.ods"
+                  onChange={e => { handleFiles(e.target.files); e.target.value = ''; }}
+                />
               </div>
             )}
 
