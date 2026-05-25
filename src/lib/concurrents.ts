@@ -169,15 +169,30 @@ export function useConcurrents() {
       if (!session) return;
       sessionRef.current = { id: session.user.id, email: session.user.email || '' };
 
-      const [concRes, prodRes, noteRes] = await Promise.all([
+      const [concRes, prodRes, noteRes, rolesRes] = await Promise.all([
         supabase.from('concurrents').select('*').order('nom'),
         supabase.from('concurrent_produits').select('*').order('nom'),
         supabase.from('concurrent_notes').select('*').order('date_note', { ascending: false }),
+        supabase.from('veille_roles').select('email, display_name'),
       ]);
 
       if (concRes.data) setConcurrents(concRes.data.map(dbToConcurrent));
       if (prodRes.data) setProduits(prodRes.data.map(dbToConcurrentProduit));
       if (noteRes.data) setNotes(noteRes.data.map(dbToConcurrentNote));
+
+      // Pré-charger les noms d'affichage pour formatCreateur
+      if (rolesRes.data) {
+        const map = getCreatorNames();
+        let changed = false;
+        for (const row of rolesRes.data) {
+          if (row.email && row.display_name && map[row.email] !== row.display_name) {
+            map[row.email] = row.display_name;
+            changed = true;
+          }
+        }
+        if (changed) localStorage.setItem(LS_KEY, JSON.stringify(map));
+      }
+
       setLoading(false);
     }
     load();
