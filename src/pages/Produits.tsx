@@ -258,13 +258,13 @@ export default function Produits() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-48 max-w-sm">
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative w-full sm:flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input className="pl-9" placeholder="Rechercher…" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <Select value={filterConc} onValueChange={setFilterConc}>
-          <SelectTrigger className="w-48">
+          <SelectTrigger className="w-full sm:w-48">
             <SelectValue placeholder="Tous les concurrents" />
           </SelectTrigger>
           <SelectContent>
@@ -310,6 +310,7 @@ export default function Produits() {
                       </p>
                     )}
                     <p className="text-xs text-muted-foreground sm:hidden">{concName(p.concurrentId)}</p>
+                    {p.categorie && <p className="md:hidden mt-0.5"><Badge variant="outline" className="text-[10px] py-0 h-4">{p.categorie}</Badge></p>}
                   </td>
                   <td className="px-4 py-2.5 hidden sm:table-cell text-muted-foreground">{concName(p.concurrentId)}</td>
                   <td className="px-4 py-2.5 hidden md:table-cell">
@@ -322,11 +323,11 @@ export default function Produits() {
                   {canEdit && (
                     <td className="px-2 py-2.5" onClick={e => e.stopPropagation()}>
                       <div className="flex gap-1 justify-end">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(p)}>
-                          <Pencil className="h-3.5 w-3.5" />
+                        <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-7 sm:w-7" onClick={() => openEdit(p)}>
+                          <Pencil className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setDeleteId(p.id)}>
-                          <Trash2 className="h-3.5 w-3.5" />
+                        <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-7 sm:w-7 text-destructive hover:text-destructive" onClick={() => setDeleteId(p.id)}>
+                          <Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                         </Button>
                       </div>
                     </td>
