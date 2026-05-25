@@ -165,9 +165,6 @@ export default function Produits() {
   const [importError, setImportError] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const dragCounter = useRef(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  // Empêche Radix de fermer le dialog quand le file-picker natif vole le focus
-  const filePickerActiveRef = useRef(false);
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showNomSuggestions, setShowNomSuggestions] = useState(false);
@@ -239,7 +236,6 @@ export default function Produits() {
   // ── Import tarif ──
 
   const handleFiles = useCallback(async (files: FileList | null) => {
-    filePickerActiveRef.current = false;
     if (!files || files.length === 0) return;
     const file = files[0];
     if (!file.name.match(/\.(pdf|xlsx?|csv|ods)$/i)) {
@@ -512,13 +508,10 @@ export default function Produits() {
       </Dialog>
 
       {/* Import Dialog */}
-      <Dialog open={importOpen} onOpenChange={v => { if (!analysing && !filePickerActiveRef.current) setImportOpen(v); }}>
+      <Dialog open={importOpen} onOpenChange={v => { if (!analysing) setImportOpen(v); }}>
         <DialogContent
           className="max-w-2xl max-h-[90vh] flex flex-col"
-          onInteractOutside={e => {
-            // Empêche la fermeture quand le file-picker natif vole le focus
-            if (filePickerActiveRef.current) e.preventDefault();
-          }}
+          onInteractOutside={e => e.preventDefault()}
         >
           <DialogHeader>
             <DialogTitle>Importer un tarif concurrent</DialogTitle>
@@ -534,27 +527,27 @@ export default function Produits() {
               </Select>
             </div>
 
-            {/* Drop zone */}
+            {/* Drop zone — label htmlFor active le file input sans click() programmatique */}
             {extracted.length === 0 && !analysing && (
-              <div
-                className={cn('border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer', dragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50')}
+              <label
+                htmlFor="tarif-file-input"
+                className={cn('block border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer', dragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50')}
                 onDragEnter={e => { e.preventDefault(); dragCounter.current++; setDragOver(true); }}
                 onDragOver={e => e.preventDefault()}
                 onDragLeave={() => { dragCounter.current--; if (dragCounter.current === 0) setDragOver(false); }}
                 onDrop={e => { e.preventDefault(); dragCounter.current = 0; setDragOver(false); handleFiles(e.dataTransfer.files); }}
-                onClick={() => { filePickerActiveRef.current = true; fileInputRef.current?.click(); }}
               >
                 <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
                 <p className="font-medium">Glissez votre tarif ici</p>
                 <p className="text-sm text-muted-foreground mt-1">PDF, Excel (.xlsx, .xls), CSV — analyse IA automatique</p>
                 <input
-                  ref={fileInputRef}
+                  id="tarif-file-input"
                   type="file"
                   className="hidden"
                   accept=".pdf,.xlsx,.xls,.csv,.ods"
                   onChange={e => { handleFiles(e.target.files); e.target.value = ''; }}
                 />
-              </div>
+              </label>
             )}
 
             {analysing && (
