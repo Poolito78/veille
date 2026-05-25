@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from './supabase';
+import { logVeilleHistorique } from './historique';
 
 // ── Nom d'affichage créateur ───────────────────────────────────────────────
 const LS_KEY = 'veille_creator_names';
@@ -162,6 +163,10 @@ export function useConcurrents() {
   const [notes, setNotes] = useState<ConcurrentNote[]>([]);
   const [loading, setLoading] = useState(true);
   const sessionRef = useRef<{ id: string; email: string } | null>(null);
+  const concurrentsRef = useRef<Concurrent[]>([]);
+
+  // Garder concurrentsRef à jour pour y accéder dans les callbacks
+  useEffect(() => { concurrentsRef.current = concurrents; }, [concurrents]);
 
   useEffect(() => {
     async function load() {
@@ -212,23 +217,31 @@ export function useConcurrents() {
       updatedAt: new Date().toISOString().split('T')[0],
     };
     const { error } = await supabase.from('concurrents').insert(concurrentToDb(newC) as any);
-    if (!error) setConcurrents(prev => [...prev, newC].sort((a, b) => a.nom.localeCompare(b.nom)));
+    if (!error) {
+      setConcurrents(prev => [...prev, newC].sort((a, b) => a.nom.localeCompare(b.nom)));
+      logVeilleHistorique({ entiteType: 'concurrent', entiteId: newC.id, entiteNumero: newC.nom, action: 'creation' });
+    }
     return error ? null : newC;
   }, []);
 
   const updateConcurrent = useCallback(async (c: Concurrent) => {
     const updated = { ...c, updatedAt: new Date().toISOString().split('T')[0] };
     const { error } = await supabase.from('concurrents').update(concurrentToDb(updated) as any).eq('id', c.id);
-    if (!error) setConcurrents(prev => prev.map(x => x.id === c.id ? updated : x));
+    if (!error) {
+      setConcurrents(prev => prev.map(x => x.id === c.id ? updated : x));
+      logVeilleHistorique({ entiteType: 'concurrent', entiteId: c.id, entiteNumero: c.nom, action: 'modification' });
+    }
     return error;
   }, []);
 
   const deleteConcurrent = useCallback(async (id: string) => {
+    const nom = concurrentsRef.current.find(x => x.id === id)?.nom || id;
     const { error } = await supabase.from('concurrents').delete().eq('id', id);
     if (!error) {
       setConcurrents(prev => prev.filter(x => x.id !== id));
       setProduits(prev => prev.filter(x => x.concurrentId !== id));
       setNotes(prev => prev.filter(x => x.concurrentId !== id));
+      logVeilleHistorique({ entiteType: 'concurrent', entiteId: id, entiteNumero: nom, action: 'suppression' });
     }
     return error;
   }, []);
@@ -246,21 +259,54 @@ export function useConcurrents() {
       createdAt: new Date().toISOString().split('T')[0],
     };
     const { error } = await supabase.from('concurrent_produits').insert(concurrentProduitToDb(newP) as any);
-    if (!error) setProduits(prev => [...prev, newP].sort((a, b) => a.nom.localeCompare(b.nom)));
+    if (!error) {
+      setProduits(prev => [...prev, newP].sort((a, b) => a.nom.localeCompare(b.nom)));
+      const concNom = concurrentsRef.current.find(c => c.id === newP.concurrentId)?.nom;
+      logVeilleHistorique({
+        entiteType: 'concurrent_produit', entiteId: newP.id, entiteNumero: newP.nom, action: 'creation',
+        details: {
+          ...(concNom ? { concurrent: concNom } : {}),
+          ...(newP.prixHT != null ? { prixHT: `${newP.prixHT} €` } : {}),
+          ...(newP.reference ? { reference: newP.reference } : {}),
+          ...(newP.categorie ? { categorie: newP.categorie } : {}),
+        },
+      });
+    }
     return error ? null : newP;
   }, []);
 
   const updateProduit = useCallback(async (p: ConcurrentProduit) => {
     const { error } = await supabase.from('concurrent_produits').update(concurrentProduitToDb(p) as any).eq('id', p.id);
-    if (!error) setProduits(prev => prev.map(x => x.id === p.id ? p : x));
+    if (!error) {
+      setProduits(prev => prev.map(x => x.id === p.id ? p : x));
+      const concNom = concurrentsRef.current.find(c => c.id === p.concurrentId)?.nom;
+      logVeilleHistorique({
+        entiteType: 'concurrent_produit', entiteId: p.id, entiteNumero: p.nom, action: 'modification',
+        details: {
+          ...(concNom ? { concurrent: concNom } : {}),
+          ...(p.prixHT != null ? { prixHT: `${p.prixHT} €` } : {}),
+          ...(p.reference ? { reference: p.reference } : {}),
+        },
+      });
+    }
     return error;
   }, []);
 
   const deleteProduit = useCallback(async (id: string) => {
+    const prod = produits.find(x => x.id === id);
     const { error } = await supabase.from('concurrent_produits').delete().eq('id', id);
-    if (!error) setProduits(prev => prev.filter(x => x.id !== id));
+    if (!error) {
+      setProduits(prev => prev.filter(x => x.id !== id));
+      if (prod) {
+        const concNom = concurrentsRef.current.find(c => c.id === prod.concurrentId)?.nom;
+        logVeilleHistorique({
+          entiteType: 'concurrent_produit', entiteId: id, entiteNumero: prod.nom, action: 'suppression',
+          details: concNom ? { concurrent: concNom } : {},
+        });
+      }
+    }
     return error;
-  }, []);
+  }, [produits]);
 
   // ── Notes CRUD ──
 
@@ -275,21 +321,45 @@ export function useConcurrents() {
       createdAt: new Date().toISOString().split('T')[0],
     };
     const { error } = await supabase.from('concurrent_notes').insert(concurrentNoteToDb(newN) as any);
-    if (!error) setNotes(prev => [newN, ...prev]);
+    if (!error) {
+      setNotes(prev => [newN, ...prev]);
+      const concNom = concurrentsRef.current.find(c => c.id === newN.concurrentId)?.nom;
+      logVeilleHistorique({
+        entiteType: 'concurrent_note', entiteId: newN.id, entiteNumero: newN.titre, action: 'creation',
+        details: concNom ? { concurrent: concNom } : {},
+      });
+    }
     return error ? null : newN;
   }, []);
 
   const updateNote = useCallback(async (n: ConcurrentNote) => {
     const { error } = await supabase.from('concurrent_notes').update(concurrentNoteToDb(n) as any).eq('id', n.id);
-    if (!error) setNotes(prev => prev.map(x => x.id === n.id ? n : x));
+    if (!error) {
+      setNotes(prev => prev.map(x => x.id === n.id ? n : x));
+      const concNom = concurrentsRef.current.find(c => c.id === n.concurrentId)?.nom;
+      logVeilleHistorique({
+        entiteType: 'concurrent_note', entiteId: n.id, entiteNumero: n.titre, action: 'modification',
+        details: concNom ? { concurrent: concNom } : {},
+      });
+    }
     return error;
   }, []);
 
   const deleteNote = useCallback(async (id: string) => {
+    const note = notes.find(x => x.id === id);
     const { error } = await supabase.from('concurrent_notes').delete().eq('id', id);
-    if (!error) setNotes(prev => prev.filter(x => x.id !== id));
+    if (!error) {
+      setNotes(prev => prev.filter(x => x.id !== id));
+      if (note) {
+        const concNom = concurrentsRef.current.find(c => c.id === note.concurrentId)?.nom;
+        logVeilleHistorique({
+          entiteType: 'concurrent_note', entiteId: id, entiteNumero: note.titre, action: 'suppression',
+          details: concNom ? { concurrent: concNom } : {},
+        });
+      }
+    }
     return error;
-  }, []);
+  }, [notes]);
 
   return {
     concurrents, produits, notes, loading,
