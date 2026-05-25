@@ -285,7 +285,11 @@ export default function Produits() {
             </thead>
             <tbody className="divide-y">
               {filtered.map(p => (
-                <tr key={p.id} className="hover:bg-muted/30 transition-colors">
+                <tr
+                  key={p.id}
+                  className={cn('transition-colors', canEdit ? 'hover:bg-muted/30 cursor-pointer' : 'hover:bg-muted/30')}
+                  onClick={canEdit ? () => openEdit(p) : undefined}
+                >
                   <td className="px-4 py-2.5">
                     <p className="font-medium">{p.nom}</p>
                     {p.reference && <p className="text-xs text-muted-foreground">{p.reference}</p>}
@@ -299,7 +303,7 @@ export default function Produits() {
                     {p.prixHT != null ? p.prixHT.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }) : '—'}
                   </td>
                   {canEdit && (
-                    <td className="px-2 py-2.5">
+                    <td className="px-2 py-2.5" onClick={e => e.stopPropagation()}>
                       <div className="flex gap-1 justify-end">
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(p)}>
                           <Pencil className="h-3.5 w-3.5" />
