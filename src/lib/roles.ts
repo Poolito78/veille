@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './supabase';
+import { setCreatorName } from './concurrents';
 
 export type Role = 'admin' | 'contributeur' | 'lecteur';
 
@@ -33,7 +34,12 @@ export function useRole() {
         .maybeSingle();
 
       setRole((data?.role as Role) || 'lecteur');
-      setDisplayName(data?.display_name || data?.email || session.user.email || null);
+      const name = data?.display_name || data?.email || session.user.email || null;
+      setDisplayName(name);
+      // Synchronise le nom d'affichage dans le cache localStorage de formatCreateur
+      if (name && session.user.email && name !== session.user.email) {
+        setCreatorName(session.user.email, name);
+      }
       setLoading(false);
     }
     load();
