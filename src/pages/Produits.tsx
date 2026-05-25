@@ -29,6 +29,7 @@ interface ExtractedProduit {
   selected: boolean;
 }
 
+// v2
 const PROMPT = `Extrais toutes les lignes produit/article/prestation de ce document avec leur prix.
 Retourne un JSON array (uniquement, sans markdown) : [{"nom":"...","reference":"...","categorie":"...","prixHT":"...","description":"..."}]
 Si un champ est absent, utilise une chaîne vide. prixHT doit être un nombre décimal (ex: "12.50").`;
