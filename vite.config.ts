@@ -10,6 +10,7 @@ export default defineConfig(({ mode }) => {
       alias: { '@': path.resolve(__dirname, './src') },
     },
     server: { port: 8090 },
+    cacheDir: '/tmp/vite-cache',
     define: {
       'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(env.VITE_SUPABASE_URL ?? ''),
       'import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY': JSON.stringify(env.VITE_SUPABASE_PUBLISHABLE_KEY ?? ''),
