@@ -117,11 +117,13 @@ function concurrentProduitToDb(p: ConcurrentProduit) {
     prix_ht: p.prixHT ?? null,
     description: p.description || null,
     client_id: p.clientId || null,
-    client_nom: p.clientNom || null,
-    informateur: p.informateur || null,
-    date_renseignement: p.dateRenseignement || null,
     created_by: p.createdBy || null,
     created_by_email: p.createdByEmail || null,
+    // Colonnes ajoutées via migration — incluses conditionnellement pour éviter
+    // l'erreur PostgREST si la migration n'a pas encore été appliquée
+    ...(p.clientNom !== undefined ? { client_nom: p.clientNom || null } : {}),
+    ...(p.informateur !== undefined ? { informateur: p.informateur || null } : {}),
+    ...(p.dateRenseignement !== undefined ? { date_renseignement: p.dateRenseignement || null } : {}),
   };
 }
 
