@@ -42,6 +42,7 @@ function parseJsonArray(text: string): ExtractedProduit[] {
 
 async function callAI(texte: string): Promise<ExtractedProduit[]> {
   const content = `${PROMPT}\n\n${texte.slice(0, 12000)}`;
+  const providerErrors: string[] = [];
 
   // Groq
   const groqKey = __GROQ_KEY__;
@@ -59,8 +60,8 @@ async function callAI(texte: string): Promise<ExtractedProduit[]> {
       if (results.length > 0) return results;
       // Réponse valide mais vide → continuer vers le provider suivant
     } catch (e: any) {
+      providerErrors.push(`Groq: ${e.message}`);
       console.warn('[Groq]', e.message);
-      // fallthrough vers Gemini
     }
   }
 
@@ -68,7 +69,7 @@ async function callAI(texte: string): Promise<ExtractedProduit[]> {
   const gemKey = __GEMINI_KEY__;
   if (gemKey) {
     try {
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${gemKey}`, {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${gemKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: content }] }] }),
@@ -79,26 +80,41 @@ async function callAI(texte: string): Promise<ExtractedProduit[]> {
       const results = parseJsonArray(text);
       if (results.length > 0) return results;
     } catch (e: any) {
+      providerErrors.push(`Gemini: ${e.message}`);
       console.warn('[Gemini]', e.message);
-      // fallthrough vers OpenRouter
     }
   }
 
   // OpenRouter
   const orKey = __OPENROUTER_KEY__;
   if (orKey) {
-    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${orKey}` },
-      body: JSON.stringify({ model: 'mistralai/mistral-7b-instruct:free', messages: [{ role: 'user', content }], max_tokens: 2000, temperature: 0.1 }),
-    });
-    const d = await r.json();
-    if (!r.ok || d.error) throw new Error(d.error?.message || `OpenRouter HTTP ${r.status}`);
-    const text = d.choices?.[0]?.message?.content || '';
-    return parseJsonArray(text);
+    try {
+      const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${orKey}` },
+        body: JSON.stringify({ model: 'mistralai/mistral-7b-instruct:free', messages: [{ role: 'user', content }], max_tokens: 2000, temperature: 0.1 }),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) throw new Error(d.error?.message || `OpenRouter HTTP ${r.status}`);
+      const text = d.choices?.[0]?.message?.content || '';
+      return parseJsonArray(text);
+    } catch (e: any) {
+      providerErrors.push(`OpenRouter: ${e.message}`);
+    }
   }
 
-  throw new Error('Aucune clé IA configurée. Ajoutez VITE_GROQ_API_KEY, VITE_GEMINI_API_KEY ou VITE_OPENROUTER_API_KEY dans les variables d\'environnement Vercel. Pour un fichier CSV/Excel, l\'import sans IA est possible — renommez les colonnes : nom, reference, categorie, prixHT.');
+  // Aucune clé configurée
+  if (!groqKey && !gemKey && !orKey) {
+    throw new Error('Aucune clé IA configurée. Ajoutez VITE_GROQ_API_KEY, VITE_GEMINI_API_KEY ou VITE_OPENROUTER_API_KEY dans les variables d\'environnement Vercel. Pour un fichier CSV/Excel, l\'import sans IA est possible — renommez les colonnes : nom, reference, categorie, prixHT.');
+  }
+
+  // Clés présentes mais tous les appels ont échoué
+  if (providerErrors.length > 0) {
+    throw new Error(`Erreur API IA — ${providerErrors.join(' | ')}`);
+  }
+
+  // Clés présentes, appels réussis mais aucun résultat extrait
+  return [];
 }
 
 /** Essai d'import direct CSV/Excel sans IA (colonnes nommées). */
