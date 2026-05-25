@@ -73,12 +73,34 @@ export default function Pivot() {
             </thead>
             <tbody className="divide-y">
               {productNames.map(nom => {
-                // Find this product across all competitors
+                // Pour chaque concurrent, trouver le prix le plus probable (mode)
                 const row = concurrents.map(c => {
                   const matches = prodFiltered.filter(p => p.nom.trim() === nom && p.concurrentId === c.id);
-                  // Préférer l'entrée avec un prix, puis la plus récente
-                  const p = matches.find(m => m.prixHT != null) ?? matches[matches.length - 1];
-                  return { concurrent: c, produit: p };
+                  const withPrice = matches.filter(m => m.prixHT != null);
+
+                  if (withPrice.length === 0) {
+                    return { concurrent: c, produit: matches[matches.length - 1], modeCount: 0, totalWithPrice: 0 };
+                  }
+
+                  // Grouper par prix et trouver le mode (prix le plus fréquent)
+                  const priceGroups = new Map<number, typeof withPrice>();
+                  for (const m of withPrice) {
+                    const key = m.prixHT!;
+                    if (!priceGroups.has(key)) priceGroups.set(key, []);
+                    priceGroups.get(key)!.push(m);
+                  }
+                  const maxCount = Math.max(...Array.from(priceGroups.values()).map(g => g.length));
+                  // En cas d'ex-aequo, prendre le groupe le plus récent
+                  const [, modeEntries] = Array.from(priceGroups.entries())
+                    .filter(([, g]) => g.length === maxCount)
+                    .sort(([, ga], [, gb]) => gb[gb.length - 1].createdAt.localeCompare(ga[ga.length - 1].createdAt))[0];
+
+                  return {
+                    concurrent: c,
+                    produit: modeEntries[modeEntries.length - 1],
+                    modeCount: maxCount,
+                    totalWithPrice: withPrice.length,
+                  };
                 });
 
                 const prices = row.map(r => r.produit?.prixHT).filter(p => p != null) as number[];
@@ -88,7 +110,7 @@ export default function Pivot() {
                 return (
                   <tr key={nom} className="hover:bg-muted/20 transition-colors">
                     <td className="px-4 py-3 sticky left-0 bg-background border-r font-medium">{nom}</td>
-                    {row.map(({ concurrent, produit }) => {
+                    {row.map(({ concurrent, produit, modeCount, totalWithPrice }) => {
                       if (!produit) {
                         return <td key={concurrent.id} className="px-4 py-3 text-center text-muted-foreground">—</td>;
                       }
@@ -97,13 +119,20 @@ export default function Pivot() {
                       return (
                         <td key={concurrent.id} className="px-4 py-3 text-center">
                           {produit.prixHT != null ? (
-                            <span className={`font-medium ${isMin ? 'text-green-600' : isMax ? 'text-red-500' : ''}`}>
-                              {produit.prixHT.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
-                            </span>
+                            <div>
+                              <span className={`font-medium ${isMin ? 'text-green-600' : isMax ? 'text-red-500' : ''}`}>
+                                {produit.prixHT.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+                              </span>
+                              {totalWithPrice > 1 && (
+                                <p className="text-xs text-muted-foreground mt-0.5" title={`${modeCount} entrée${modeCount > 1 ? 's' : ''} concordante${modeCount > 1 ? 's' : ''} sur ${totalWithPrice}`}>
+                                  {modeCount}/{totalWithPrice} concordant{modeCount > 1 ? 's' : ''}
+                                </p>
+                              )}
+                              {produit.reference && <p className="text-xs text-muted-foreground">{produit.reference}</p>}
+                            </div>
                           ) : (
                             <span className="text-muted-foreground text-xs">Prix NC</span>
                           )}
-                          {produit.reference && <p className="text-xs text-muted-foreground">{produit.reference}</p>}
                         </td>
                       );
                     })}
