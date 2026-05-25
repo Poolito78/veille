@@ -108,7 +108,7 @@ export default function Produits() {
   // Manual dialog
   const [manualOpen, setManualOpen] = useState(false);
   const [editingProd, setEditingProd] = useState<ConcurrentProduit | null>(null);
-  const [form, setForm] = useState({ concurrentId: '', nom: '', reference: '', categorie: '', prixHT: '', description: '' });
+  const [form, setForm] = useState({ concurrentId: '', nom: '', reference: '', categorie: '', prixHT: '', description: '', clientNom: '', informateur: '', dateRenseignement: '' });
   const [saving, setSaving] = useState(false);
 
   // Import dialog
@@ -156,13 +156,13 @@ export default function Produits() {
 
   function openNew() {
     setEditingProd(null);
-    setForm({ concurrentId: concurrents[0]?.id || '', nom: '', reference: '', categorie: '', prixHT: '', description: '' });
+    setForm({ concurrentId: concurrents[0]?.id || '', nom: '', reference: '', categorie: '', prixHT: '', description: '', clientNom: '', informateur: '', dateRenseignement: new Date().toISOString().split('T')[0] });
     setManualOpen(true);
   }
 
   function openEdit(p: ConcurrentProduit) {
     setEditingProd(p);
-    setForm({ concurrentId: p.concurrentId, nom: p.nom, reference: p.reference || '', categorie: p.categorie || '', prixHT: p.prixHT != null ? String(p.prixHT) : '', description: p.description || '' });
+    setForm({ concurrentId: p.concurrentId, nom: p.nom, reference: p.reference || '', categorie: p.categorie || '', prixHT: p.prixHT != null ? String(p.prixHT) : '', description: p.description || '', clientNom: p.clientNom || '', informateur: p.informateur || '', dateRenseignement: p.dateRenseignement || '' });
     setManualOpen(true);
   }
 
@@ -170,10 +170,19 @@ export default function Produits() {
     if (!form.nom.trim() || !form.concurrentId) return;
     setSaving(true);
     const prixHT = form.prixHT ? parseFloat(form.prixHT.replace(',', '.')) : undefined;
+    const extra = {
+      reference: form.reference || undefined,
+      categorie: form.categorie || undefined,
+      prixHT,
+      description: form.description || undefined,
+      clientNom: form.clientNom || undefined,
+      informateur: form.informateur || undefined,
+      dateRenseignement: form.dateRenseignement || undefined,
+    };
     if (editingProd) {
-      await updateProduit({ ...editingProd, nom: form.nom.trim(), reference: form.reference || undefined, categorie: form.categorie || undefined, prixHT, description: form.description || undefined });
+      await updateProduit({ ...editingProd, nom: form.nom.trim(), ...extra });
     } else {
-      await addProduit({ concurrentId: form.concurrentId, nom: form.nom.trim(), reference: form.reference || undefined, categorie: form.categorie || undefined, prixHT, description: form.description || undefined });
+      await addProduit({ concurrentId: form.concurrentId, nom: form.nom.trim(), ...extra });
     }
     setSaving(false);
     setManualOpen(false);
@@ -293,14 +302,22 @@ export default function Produits() {
                   <td className="px-4 py-2.5">
                     <p className="font-medium">{p.nom}</p>
                     {p.reference && <p className="text-xs text-muted-foreground">{p.reference}</p>}
+                    {(p.clientNom || p.informateur) && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {p.clientNom && <span>📍 {p.clientNom}</span>}
+                        {p.clientNom && p.informateur && <span className="mx-1">·</span>}
+                        {p.informateur && <span>👤 {p.informateur}</span>}
+                      </p>
+                    )}
                     <p className="text-xs text-muted-foreground sm:hidden">{concName(p.concurrentId)}</p>
                   </td>
                   <td className="px-4 py-2.5 hidden sm:table-cell text-muted-foreground">{concName(p.concurrentId)}</td>
                   <td className="px-4 py-2.5 hidden md:table-cell">
                     {p.categorie ? <Badge variant="outline">{p.categorie}</Badge> : <span className="text-muted-foreground">—</span>}
                   </td>
-                  <td className="px-4 py-2.5 text-right font-medium">
-                    {p.prixHT != null ? p.prixHT.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }) : '—'}
+                  <td className="px-4 py-2.5 text-right">
+                    <p className="font-medium">{p.prixHT != null ? p.prixHT.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }) : '—'}</p>
+                    {p.dateRenseignement && <p className="text-xs text-muted-foreground">{new Date(p.dateRenseignement).toLocaleDateString('fr-FR')}</p>}
                   </td>
                   {canEdit && (
                     <td className="px-2 py-2.5" onClick={e => e.stopPropagation()}>
@@ -383,6 +400,23 @@ export default function Produits() {
             <div className="space-y-1.5">
               <Label>Description</Label>
               <Input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+            </div>
+            <div className="border-t pt-3 space-y-3">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Source du prix</p>
+              <div className="space-y-1.5">
+                <Label>Date de renseignement</Label>
+                <Input type="date" value={form.dateRenseignement} onChange={e => setForm(f => ({ ...f, dateRenseignement: e.target.value }))} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Client source</Label>
+                  <Input value={form.clientNom} onChange={e => setForm(f => ({ ...f, clientNom: e.target.value }))} placeholder="Nom du client" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Informateur</Label>
+                  <Input value={form.informateur} onChange={e => setForm(f => ({ ...f, informateur: e.target.value }))} placeholder="Qui a renseigné ?" />
+                </div>
+              </div>
             </div>
           </div>
           <DialogFooter>

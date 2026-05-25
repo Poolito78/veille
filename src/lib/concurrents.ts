@@ -42,6 +42,9 @@ export interface ConcurrentProduit {
   prixHT?: number;
   description?: string;
   clientId?: string;
+  clientNom?: string;       // nom du client source
+  informateur?: string;     // nom de la personne qui a renseigné le prix
+  dateRenseignement?: string; // date de collecte du prix (YYYY-MM-DD)
   createdBy?: string;
   createdByEmail?: string;
   createdAt: string;
@@ -95,6 +98,9 @@ function dbToConcurrentProduit(r: any): ConcurrentProduit {
     prixHT: r.prix_ht != null ? Number(r.prix_ht) : undefined,
     description: r.description || undefined,
     clientId: r.client_id || undefined,
+    clientNom: r.client_nom || undefined,
+    informateur: r.informateur || undefined,
+    dateRenseignement: r.date_renseignement || undefined,
     createdBy: r.created_by || undefined,
     createdByEmail: r.created_by_email || undefined,
     createdAt: r.created_at?.split('T')[0] || '',
@@ -111,6 +117,9 @@ function concurrentProduitToDb(p: ConcurrentProduit) {
     prix_ht: p.prixHT ?? null,
     description: p.description || null,
     client_id: p.clientId || null,
+    client_nom: p.clientNom || null,
+    informateur: p.informateur || null,
+    date_renseignement: p.dateRenseignement || null,
     created_by: p.createdBy || null,
     created_by_email: p.createdByEmail || null,
   };
