@@ -69,7 +69,7 @@ async function callAI(texte: string): Promise<ExtractedProduit[]> {
   const gemKey = __GEMINI_KEY__;
   if (gemKey) {
     try {
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${gemKey}`, {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${gemKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: content }] }] }),
