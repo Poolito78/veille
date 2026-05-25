@@ -17,6 +17,7 @@ export interface VeilleUser {
 export function useRole() {
   const [role, setRole] = useState<Role | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -27,11 +28,12 @@ export function useRole() {
 
       const { data } = await supabase
         .from('veille_roles')
-        .select('role')
+        .select('role, display_name, email')
         .eq('user_id', session.user.id)
         .maybeSingle();
 
       setRole((data?.role as Role) || 'lecteur');
+      setDisplayName(data?.display_name || data?.email || session.user.email || null);
       setLoading(false);
     }
     load();
@@ -41,7 +43,7 @@ export function useRole() {
   }, []);
 
   return {
-    role, userId, loading,
+    role, userId, displayName, loading,
     isAdmin: role === 'admin',
     canEdit: role === 'admin' || role === 'contributeur',
   };

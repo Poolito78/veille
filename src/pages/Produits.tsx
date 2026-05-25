@@ -100,7 +100,7 @@ async function extractText(file: File): Promise<string> {
 
 export default function Produits() {
   const { concurrents, produits, loading, addProduit, updateProduit, deleteProduit } = useConcurrents();
-  const { canEdit } = useRole();
+  const { canEdit, displayName } = useRole();
 
   const [search, setSearch] = useState('');
   const [filterConc, setFilterConc] = useState('all');
@@ -156,7 +156,7 @@ export default function Produits() {
 
   function openNew() {
     setEditingProd(null);
-    setForm({ concurrentId: concurrents[0]?.id || '', nom: '', reference: '', categorie: '', prixHT: '', description: '', clientNom: '', informateur: '', dateRenseignement: new Date().toISOString().split('T')[0] });
+    setForm({ concurrentId: concurrents[0]?.id || '', nom: '', reference: '', categorie: '', prixHT: '', description: '', clientNom: '', informateur: displayName || '', dateRenseignement: new Date().toISOString().split('T')[0] });
     setManualOpen(true);
   }
 
