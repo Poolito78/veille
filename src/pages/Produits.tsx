@@ -327,14 +327,14 @@ export default function Produits() {
                   <td className="px-4 py-2.5 text-right">
                     <p className="font-medium">{p.prixHT != null ? p.prixHT.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }) : '—'}</p>
                     <p className="md:hidden text-xs text-muted-foreground">
-                      {p.dateRenseignement ? new Date(p.dateRenseignement + 'T00:00:00').toLocaleDateString('fr-FR') : p.createdAt}
+                      {new Date((p.dateRenseignement || p.createdAt) + 'T00:00:00').toLocaleDateString('fr-FR')}
                     </p>
                   </td>
                   <td className="px-4 py-2.5 hidden lg:table-cell text-sm text-muted-foreground max-w-40 truncate">{p.description || '—'}</td>
                   <td className="px-4 py-2.5 hidden lg:table-cell text-xs text-muted-foreground">{p.clientNom || '—'}</td>
                   <td className="px-4 py-2.5 hidden lg:table-cell text-xs text-muted-foreground">{p.informateur || formatCreateur(p.createdByEmail)}</td>
                   <td className="px-4 py-2.5 hidden md:table-cell text-xs text-muted-foreground">
-                    {p.dateRenseignement ? new Date(p.dateRenseignement + 'T00:00:00').toLocaleDateString('fr-FR') : p.createdAt}
+                    {new Date((p.dateRenseignement || p.createdAt) + 'T00:00:00').toLocaleDateString('fr-FR')}
                   </td>
                   {canEdit && (
                     <td className="px-2 py-2.5" onClick={e => e.stopPropagation()}>
