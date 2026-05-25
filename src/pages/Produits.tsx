@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { Plus, Search, Upload, Loader2, Check, X, Pencil, Trash2 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { useConcurrents } from '@/lib/concurrents';
@@ -122,6 +122,27 @@ export default function Produits() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [showNomSuggestions, setShowNomSuggestions] = useState(false);
+
+  // Unique product names matching current input (for autocomplete)
+  const nomSuggestions = useMemo(() => {
+    const q = form.nom.trim().toLowerCase();
+    if (!q) return [];
+    const unique = Array.from(new Set(produits.map(p => p.nom)));
+    return unique.filter(n => n.toLowerCase().includes(q)).slice(0, 8);
+  }, [form.nom, produits]);
+
+  function selectNomSuggestion(nom: string) {
+    const match = produits.find(p => p.nom === nom);
+    setForm(f => ({
+      ...f,
+      nom,
+      reference: f.reference || match?.reference || '',
+      categorie: f.categorie || match?.categorie || '',
+      // prixHT intentionally left as-is — user enters the new price
+    }));
+    setShowNomSuggestions(false);
+  }
 
   const filtered = produits.filter(p => {
     const matchSearch = p.nom.toLowerCase().includes(search.toLowerCase()) ||
@@ -310,9 +331,36 @@ export default function Produits() {
                 <SelectContent>{concurrents.map(c => <SelectItem key={c.id} value={c.id}>{c.nom}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 relative">
               <Label>Nom *</Label>
-              <Input value={form.nom} onChange={e => setForm(f => ({ ...f, nom: e.target.value }))} />
+              <Input
+                value={form.nom}
+                onChange={e => { setForm(f => ({ ...f, nom: e.target.value })); setShowNomSuggestions(true); }}
+                onFocus={() => setShowNomSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowNomSuggestions(false), 150)}
+                autoComplete="off"
+                placeholder="Nom du produit…"
+              />
+              {showNomSuggestions && nomSuggestions.length > 0 && (
+                <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover border rounded-md shadow-md overflow-hidden">
+                  {nomSuggestions.map(nom => {
+                    const match = produits.find(p => p.nom === nom);
+                    return (
+                      <button
+                        key={nom}
+                        type="button"
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-accent flex items-center justify-between gap-2"
+                        onMouseDown={() => selectNomSuggestion(nom)}
+                      >
+                        <span className="font-medium truncate">{nom}</span>
+                        {match?.categorie && (
+                          <span className="text-xs text-muted-foreground shrink-0">{match.categorie}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
