@@ -75,7 +75,9 @@ export default function Pivot() {
               {productNames.map(nom => {
                 // Find this product across all competitors
                 const row = concurrents.map(c => {
-                  const p = prodFiltered.find(p => p.nom.trim() === nom && p.concurrentId === c.id);
+                  const matches = prodFiltered.filter(p => p.nom.trim() === nom && p.concurrentId === c.id);
+                  // Préférer l'entrée avec un prix, puis la plus récente
+                  const p = matches.find(m => m.prixHT != null) ?? matches[matches.length - 1];
                   return { concurrent: c, produit: p };
                 });
 
