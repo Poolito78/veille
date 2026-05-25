@@ -33,8 +33,14 @@ const PROMPT = `Extrais toutes les lignes produit/article/prestation de ce docum
 Retourne un JSON array (uniquement, sans markdown) : [{"nom":"...","reference":"...","categorie":"...","prixHT":"...","description":"..."}]
 Si un champ est absent, utilise une chaîne vide. prixHT doit être un nombre décimal (ex: "12.50").`;
 
+function parseJsonArray(text: string): ExtractedProduit[] {
+  const match = text.match(/\[[\s\S]*\]/)?.[0];
+  if (!match) return [];
+  try { return JSON.parse(match); } catch { return []; }
+}
+
 async function callAI(texte: string): Promise<ExtractedProduit[]> {
-  const body = { model: '', messages: [{ role: 'user', content: `${PROMPT}\n\n${texte.slice(0, 12000)}` }], max_tokens: 2000, temperature: 0.1 };
+  const content = `${PROMPT}\n\n${texte.slice(0, 12000)}`;
 
   // Groq
   const groqKey = import.meta.env.VITE_GROQ_API_KEY;
@@ -43,12 +49,18 @@ async function callAI(texte: string): Promise<ExtractedProduit[]> {
       const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${groqKey}` },
-        body: JSON.stringify({ ...body, model: 'llama-3.1-70b-versatile' }),
+        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content }], max_tokens: 2000, temperature: 0.1 }),
       });
       const d = await r.json();
+      if (!r.ok || d.error) throw new Error(d.error?.message || `Groq HTTP ${r.status}`);
       const text = d.choices?.[0]?.message?.content || '';
-      return JSON.parse(text.match(/\[[\s\S]*\]/)?.[0] || '[]');
-    } catch { /* fallthrough */ }
+      const results = parseJsonArray(text);
+      if (results.length > 0) return results;
+      // Réponse valide mais vide → continuer vers le provider suivant
+    } catch (e: any) {
+      console.warn('[Groq]', e.message);
+      // fallthrough vers Gemini
+    }
   }
 
   // Gemini
@@ -58,12 +70,17 @@ async function callAI(texte: string): Promise<ExtractedProduit[]> {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${gemKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: `${PROMPT}\n\n${texte.slice(0, 12000)}` }] }] }),
+        body: JSON.stringify({ contents: [{ parts: [{ text: content }] }] }),
       });
       const d = await r.json();
+      if (!r.ok || d.error) throw new Error(d.error?.message || `Gemini HTTP ${r.status}`);
       const text = d.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      return JSON.parse(text.match(/\[[\s\S]*\]/)?.[0] || '[]');
-    } catch { /* fallthrough */ }
+      const results = parseJsonArray(text);
+      if (results.length > 0) return results;
+    } catch (e: any) {
+      console.warn('[Gemini]', e.message);
+      // fallthrough vers OpenRouter
+    }
   }
 
   // OpenRouter
@@ -72,11 +89,12 @@ async function callAI(texte: string): Promise<ExtractedProduit[]> {
     const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${orKey}` },
-      body: JSON.stringify({ ...body, model: 'mistralai/mistral-7b-instruct' }),
+      body: JSON.stringify({ model: 'mistralai/mistral-7b-instruct:free', messages: [{ role: 'user', content }], max_tokens: 2000, temperature: 0.1 }),
     });
     const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error?.message || `OpenRouter HTTP ${r.status}`);
     const text = d.choices?.[0]?.message?.content || '';
-    return JSON.parse(text.match(/\[[\s\S]*\]/)?.[0] || '[]');
+    return parseJsonArray(text);
   }
 
   throw new Error('Aucune clé API configurée (VITE_GROQ_API_KEY, VITE_GEMINI_API_KEY ou VITE_OPENROUTER_API_KEY)');
