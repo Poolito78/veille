@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
+import { ConcurrentsProvider } from '@/lib/ConcurrentsContext';
 import { Layout } from '@/components/Layout';
 import Auth from '@/pages/Auth';
 import Fiches from '@/pages/Fiches';
@@ -25,16 +26,18 @@ function ProtectedRoutes() {
   }
 
   return (
-    <Layout>
-      <Routes>
-        <Route path="/fiches" element={<Fiches />} />
-        <Route path="/produits" element={<Produits />} />
-        <Route path="/notes" element={<Notes />} />
-        <Route path="/pivot" element={<Pivot />} />
-        <Route path="/admin" element={<Admin />} />
-        <Route path="*" element={<Navigate to="/fiches" replace />} />
-      </Routes>
-    </Layout>
+    <ConcurrentsProvider>
+      <Layout>
+        <Routes>
+          <Route path="/fiches" element={<Fiches />} />
+          <Route path="/produits" element={<Produits />} />
+          <Route path="/notes" element={<Notes />} />
+          <Route path="/pivot" element={<Pivot />} />
+          <Route path="/admin" element={<Admin />} />
+          <Route path="*" element={<Navigate to="/fiches" replace />} />
+        </Routes>
+      </Layout>
+    </ConcurrentsProvider>
   );
 }
 

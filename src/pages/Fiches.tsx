@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Plus, Search, Globe, ChevronDown, ChevronUp, Pencil, Trash2, Loader2 } from 'lucide-react';
-import { useConcurrents } from '@/lib/concurrents';
+import { useConcurrentsCtx } from '@/lib/ConcurrentsContext';
 import type { Concurrent } from '@/lib/concurrents';
 import { useRole } from '@/lib/roles';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 const emptyForm = { nom: '', siteWeb: '', notes: '' };
 
 export default function Fiches() {
-  const { concurrents, produits, notes, loading, addConcurrent, updateConcurrent, deleteConcurrent } = useConcurrents();
+  const { concurrents, produits, notes, loading, addConcurrent, updateConcurrent, deleteConcurrent } = useConcurrentsCtx();
   const { canEdit } = useRole();
 
   const [search, setSearch] = useState('');

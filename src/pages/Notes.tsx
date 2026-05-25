@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Plus, Search, Pencil, Trash2, Loader2, Calendar, Link } from 'lucide-react';
-import { useConcurrents } from '@/lib/concurrents';
+import { useConcurrentsCtx } from '@/lib/ConcurrentsContext';
 import type { ConcurrentNote } from '@/lib/concurrents';
 import { useRole } from '@/lib/roles';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 
 export default function Notes() {
-  const { concurrents, notes, loading, addNote, updateNote, deleteNote } = useConcurrents();
+  const { concurrents, notes, loading, addNote, updateNote, deleteNote } = useConcurrentsCtx();
   const { canEdit } = useRole();
 
   const [search, setSearch] = useState('');

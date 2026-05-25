@@ -1,8 +1,9 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
 import { Plus, Search, Upload, Loader2, Check, X, Pencil, Trash2 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
-import { useConcurrents, formatCreateur } from '@/lib/concurrents';
+import { formatCreateur } from '@/lib/concurrents';
 import type { ConcurrentProduit } from '@/lib/concurrents';
+import { useConcurrentsCtx } from '@/lib/ConcurrentsContext';
 import { useRole } from '@/lib/roles';
 import { parseExcel } from '@/lib/parseExcel';
 import { Button } from '@/components/ui/button';
@@ -99,7 +100,7 @@ async function extractText(file: File): Promise<string> {
 }
 
 export default function Produits() {
-  const { concurrents, produits, loading, addProduit, updateProduit, deleteProduit } = useConcurrents();
+  const { concurrents, produits, loading, addProduit, updateProduit, deleteProduit } = useConcurrentsCtx();
   const { canEdit, displayName } = useRole();
 
   const [search, setSearch] = useState('');

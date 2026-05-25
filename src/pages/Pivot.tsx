@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { useConcurrents } from '@/lib/concurrents';
+import { useConcurrentsCtx } from '@/lib/ConcurrentsContext';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 
 export default function Pivot() {
-  const { concurrents, produits, loading } = useConcurrents();
+  const { concurrents, produits, loading } = useConcurrentsCtx();
   const [filterCategorie, setFilterCategorie] = useState('all');
 
   // Collect all categories
