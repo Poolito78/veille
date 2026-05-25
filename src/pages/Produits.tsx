@@ -44,7 +44,7 @@ async function callAI(texte: string): Promise<ExtractedProduit[]> {
   const content = `${PROMPT}\n\n${texte.slice(0, 12000)}`;
 
   // Groq
-  const groqKey = import.meta.env.VITE_GROQ_API_KEY;
+  const groqKey = __GROQ_KEY__;
   if (groqKey) {
     try {
       const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -65,7 +65,7 @@ async function callAI(texte: string): Promise<ExtractedProduit[]> {
   }
 
   // Gemini
-  const gemKey = import.meta.env.VITE_GEMINI_API_KEY;
+  const gemKey = __GEMINI_KEY__;
   if (gemKey) {
     try {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${gemKey}`, {
@@ -85,7 +85,7 @@ async function callAI(texte: string): Promise<ExtractedProduit[]> {
   }
 
   // OpenRouter
-  const orKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+  const orKey = __OPENROUTER_KEY__;
   if (orKey) {
     const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -249,7 +249,7 @@ export default function Produits() {
     try {
       const text = await extractText(file);
       // Essai IA en premier
-      const hasKey = !!(import.meta.env.VITE_GROQ_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_OPENROUTER_API_KEY);
+      const hasKey = !!(__GROQ_KEY__ || __GEMINI_KEY__ || __OPENROUTER_KEY__);
       let results: ExtractedProduit[] = [];
       if (hasKey) {
         results = await callAI(text);

@@ -18,10 +18,11 @@ export default defineConfig(() => {
     server: { port: 8090 },
     cacheDir: '/tmp/vite-cache',
     define: {
-      // Lecture directe de process.env (injecté par Vercel) — pas via loadEnv
-      'import.meta.env.VITE_GROQ_API_KEY': JSON.stringify(process.env.VITE_GROQ_API_KEY || ''),
-      'import.meta.env.VITE_GEMINI_API_KEY': JSON.stringify(process.env.VITE_GEMINI_API_KEY || ''),
-      'import.meta.env.VITE_OPENROUTER_API_KEY': JSON.stringify(process.env.VITE_OPENROUTER_API_KEY || ''),
+      // Variables custom — contournent le mécanisme import.meta.env de Vite 8
+      // qui ignore les define pour import.meta.env.* au profit de ses .env files
+      __GROQ_KEY__: JSON.stringify(process.env.VITE_GROQ_API_KEY || ''),
+      __GEMINI_KEY__: JSON.stringify(process.env.VITE_GEMINI_API_KEY || ''),
+      __OPENROUTER_KEY__: JSON.stringify(process.env.VITE_OPENROUTER_API_KEY || ''),
     },
   };
 });
