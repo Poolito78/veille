@@ -9,6 +9,7 @@ import Produits from '@/pages/Produits';
 import Notes from '@/pages/Notes';
 import Pivot from '@/pages/Pivot';
 import Admin from '@/pages/Admin';
+import Transport from '@/pages/Transport';
 
 function ProtectedRoutes() {
   const { session, loading } = useAuth();
@@ -33,6 +34,7 @@ function ProtectedRoutes() {
           <Route path="/produits" element={<Produits />} />
           <Route path="/notes" element={<Notes />} />
           <Route path="/pivot" element={<Pivot />} />
+          <Route path="/transport" element={<Transport />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="*" element={<Navigate to="/fiches" replace />} />
         </Routes>

@@ -1,6 +1,6 @@
 import type { ReactNode, ComponentType } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Eye, Building2, Package, FileText, BarChart3, Settings, LogOut, Menu, X } from 'lucide-react';
+import { Eye, Building2, Package, FileText, BarChart3, Truck, Settings, LogOut, Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useRole } from '@/lib/roles';
@@ -19,6 +19,7 @@ const NAV: NavItem[] = [
   { to: '/produits', icon: Package, label: 'Produits' },
   { to: '/notes', icon: FileText, label: 'Notes' },
   { to: '/pivot', icon: BarChart3, label: 'Tableau pivot' },
+  { to: '/transport', icon: Truck, label: 'Transport' },
   { to: '/admin', icon: Settings, label: 'Administration', adminOnly: true },
 ];
 
