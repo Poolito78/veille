@@ -1,8 +1,11 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { Plus, Search, Upload, Loader2, Check, X, Pencil, Trash2, SlidersHorizontal, Columns2, RotateCcw, Filter, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import { Plus, Search, Upload, Loader2, Check, X, Pencil, Trash2, SlidersHorizontal, Columns2, RotateCcw, Filter, ChevronUp, ChevronDown, ChevronsUpDown, MoreHorizontal, Download, Mail } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
+import * as XLSX from 'xlsx';
+import { toast } from 'sonner';
 import { formatCreateur } from '@/lib/concurrents';
-import type { ConcurrentProduit } from '@/lib/concurrents';
+import type { ConcurrentProduit, Concurrent, ConcurrentNote } from '@/lib/concurrents';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { useConcurrentsCtx } from '@/lib/ConcurrentsContext';
 import { useRole } from '@/lib/roles';
 import { parseExcel } from '@/lib/parseExcel';
@@ -183,10 +186,83 @@ async function extractText(file: File): Promise<string> {
   return pages.join('\n\n');
 }
 
+// ── Export helpers ──────────────────────────────────────────────────────────
+
+function exportVeilleExcel(concurrents: Concurrent[], produits: ConcurrentProduit[], notes: ConcurrentNote[]) {
+  const wb = XLSX.utils.book_new();
+  const concMap = Object.fromEntries(concurrents.map(c => [c.id, c.nom]));
+
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(concurrents.map(c => ({
+    'Nom': c.nom, 'Site web': c.siteWeb || '', 'Notes': c.notes || '',
+    'Créé par': c.createdByEmail || '', 'Date': c.createdAt,
+  }))), 'Concurrents');
+
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(produits.map(p => ({
+    'Concurrent': concMap[p.concurrentId] || '', 'Produit': p.nom,
+    'Référence': p.reference || '', 'Catégorie': p.categorie || '',
+    'Prix HT': p.prixHT != null ? p.prixHT : '', 'Description': p.description || '',
+    'Client source': p.clientNom || '', 'Saisi par': p.informateur || p.createdByEmail || '',
+    'Date': p.dateRenseignement || p.createdAt,
+  }))), 'Produits concurrents');
+
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(notes.map(n => ({
+    'Concurrent': concMap[n.concurrentId] || '', 'Date note': n.dateNote,
+    'Titre': n.titre, 'Contenu': n.contenu || '',
+    'Source': n.source || '', 'Saisi par': n.createdByEmail || '',
+  }))), 'Notes');
+
+  XLSX.writeFile(wb, `VeilleConcurrence_${new Date().toISOString().split('T')[0]}.xlsx`);
+  toast.success('Export Excel généré');
+}
+
+function exportByEmail(concurrents: Concurrent[], produits: ConcurrentProduit[]) {
+  const wb = XLSX.utils.book_new();
+  const concMap = Object.fromEntries(concurrents.map(c => [c.id, c.nom]));
+
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(concurrents.map(c => ({
+    'Nom': c.nom, 'Site web': c.siteWeb || '', 'Créé par': c.createdByEmail || '',
+  }))), 'Concurrents');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(produits.map(p => ({
+    'Concurrent': concMap[p.concurrentId] || '', 'Produit': p.nom,
+    'Catégorie': p.categorie || '', 'Prix HT': p.prixHT != null ? p.prixHT : '',
+    'Saisi par': p.informateur || p.createdByEmail || '',
+  }))), 'Produits');
+
+  const xlsxData = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+  const fileName = `VeilleConcurrence_${new Date().toISOString().split('T')[0]}.xlsx`;
+  const boundary = `----=_Part_${Date.now()}`;
+  const subject = `Veille Concurrence — Export ${new Date().toLocaleDateString('fr-FR')}`;
+
+  const emlContent = [
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    `Subject: ${subject}`, 'X-Unsent: 1', '',
+    `--${boundary}`,
+    'Content-Type: text/plain; charset=UTF-8', '',
+    `Bonjour,\n\nVeuillez trouver ci-joint l'export de la veille concurrence au ${new Date().toLocaleDateString('fr-FR')}.\n\nCordialement`,
+    '',
+    `--${boundary}`,
+    `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; name="${fileName}"`,
+    'Content-Transfer-Encoding: base64',
+    `Content-Disposition: attachment; filename="${fileName}"`, '',
+    xlsxData, '',
+    `--${boundary}--`,
+  ].join('\r\n');
+
+  const blob = new Blob([emlContent], { type: 'message/rfc822' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `VeilleConcurrence_${new Date().toISOString().split('T')[0]}.eml`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast.success('Fichier email généré — ouvrez-le avec Outlook ou Thunderbird');
+}
+
 // ── Composant principal ────────────────────────────────────────────────────
 
 export default function Produits() {
-  const { concurrents, produits, loading, addProduit, updateProduit, deleteProduit } = useConcurrentsCtx();
+  const { concurrents, produits, notes, loading, addProduit, updateProduit, deleteProduit } = useConcurrentsCtx();
   const { canEdit, displayName } = useRole();
 
   // ── Colonnes ──
@@ -405,16 +481,33 @@ export default function Produits() {
           <h1 className="text-2xl font-bold">Produits concurrents</h1>
           <p className="text-sm text-muted-foreground">{produits.length} produit{produits.length > 1 ? 's' : ''} référencé{produits.length > 1 ? 's' : ''}</p>
         </div>
-        {canEdit && (
-          <div className="sm:ml-auto flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => { setImportConcId(concurrents[0]?.id || ''); setExtracted([]); setImportError(''); setImportOpen(true); }} className="gap-1.5">
-              <Upload className="h-4 w-4" /> Importer tarif
-            </Button>
+        <div className="sm:ml-auto flex gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline" className="gap-1.5">
+                <MoreHorizontal className="h-4 w-4" /> Action
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={() => exportVeilleExcel(concurrents, produits, notes)}>
+                <Download className="h-4 w-4 mr-2 text-muted-foreground" /> Export Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportByEmail(concurrents, produits)}>
+                <Mail className="h-4 w-4 mr-2 text-muted-foreground" /> Envoi par email
+              </DropdownMenuItem>
+              {canEdit && (
+                <DropdownMenuItem onClick={() => { setImportConcId(concurrents[0]?.id || ''); setExtracted([]); setImportError(''); setImportOpen(true); }}>
+                  <Upload className="h-4 w-4 mr-2 text-muted-foreground" /> Importer tarif
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {canEdit && (
             <Button size="sm" onClick={openNew} className="gap-1.5">
-              <Plus className="h-4 w-4" /> Ajouter
+              <Plus className="h-4 w-4" /> Ajout
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* ── Barre filtres ─────────────────────────────────────────────────── */}
