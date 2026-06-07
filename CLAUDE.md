@@ -69,6 +69,12 @@ Each entity has a pair of mapping functions (`dbToX` / `xToDb`) that are the **o
 
 PDF and Excel tariffs are parsed client-side, then sent to an LLM with a fixed extraction prompt. Provider fallback chain: **Groq → Gemini → OpenRouter**. Keys come from `VITE_GROQ_API_KEY`, `VITE_GEMINI_API_KEY`, `VITE_OPENROUTER_API_KEY` env vars (any subset is fine; missing keys skip that provider).
 
+**Key injection — critical Vite 8 / Rolldown quirk:** `define` does NOT work for custom globals in Rolldown 8 — the hash is computed before substitution, so injected values are lost. Instead, a custom `transform` plugin in `vite.config.ts` replaces `__GROQ_KEY__` / `__GEMINI_KEY__` / `__OPENROUTER_KEY__` directly in the `Produits.tsx` source at transform time. `src/globals.d.ts` declares these for TypeScript. Never switch back to `define` for these keys.
+
+**Gemini API key source matters:** Keys created via the Google Cloud Console have `limit: 0` on all free-tier Gemini models (`gemini-2.0-flash`, `gemini-2.0-flash-lite`, `gemini-1.5-flash`). Keys must be created at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) to get the free tier (15 RPM, 1 M tokens/day). **Groq is the recommended primary provider** — create a free key at [console.groq.com/keys](https://console.groq.com/keys), model `llama-3.3-70b-versatile`.
+
+**Current model:** `gemini-2.0-flash-lite` (v1beta). `gemini-1.5-flash` was removed from the v1beta endpoint.
+
 PDF text extraction uses `pdfjs-dist` with a bundled worker:
 ```ts
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).toString();
@@ -92,7 +98,7 @@ Handles: invite new user via Supabase Auth admin endpoint, upsert row in `veille
 |---|---|
 | `veille_roles` | `user_id`, `role` (admin/contributeur/lecteur), `email`, `crm_access`, `display_name`, `invited_at` |
 | `concurrents` | `id`, `nom`, `site_web`, `notes`, `created_by`, `created_by_email` |
-| `concurrent_produits` | `id`, `concurrent_id`, `nom`, `reference`, `categorie`, `prix_ht`, `client_id`, `created_by_email` |
+| `concurrent_produits` | `id`, `concurrent_id`, `nom`, `reference`, `categorie`, `quantite`, `prix_ht`, `client_id`, `client_nom`, `informateur`, `date_renseignement`, `created_by_email` |
 | `concurrent_notes` | `id`, `concurrent_id`, `titre`, `contenu`, `source`, `date_note`, `created_by_email` |
 
 **RLS on `veille_roles`:** uses a `security definer` function `get_my_veille_role()` to avoid recursive policy evaluation. Never replace admin policies with inline subqueries on `veille_roles` — it causes infinite recursion.

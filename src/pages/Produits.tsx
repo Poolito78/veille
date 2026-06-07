@@ -26,7 +26,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 // ── Colonnes ────────────────────────────────────────────────────────────────
-const ALL_COL_KEYS = ['nom', 'concurrent', 'reference', 'categorie', 'prixHT', 'description', 'clientNom', 'informateur', 'date'] as const;
+const ALL_COL_KEYS = ['nom', 'concurrent', 'reference', 'categorie', 'quantite', 'prixHT', 'description', 'clientNom', 'informateur', 'date'] as const;
 type ColKey = typeof ALL_COL_KEYS[number];
 
 const COL_DEFS: { key: ColKey; label: string; defaultVisible: boolean }[] = [
@@ -34,6 +34,7 @@ const COL_DEFS: { key: ColKey; label: string; defaultVisible: boolean }[] = [
   { key: 'concurrent', label: 'Concurrent',    defaultVisible: true },
   { key: 'reference',  label: 'Référence',     defaultVisible: true },
   { key: 'categorie',  label: 'Catégorie',     defaultVisible: true },
+  { key: 'quantite',   label: 'Quantité',      defaultVisible: true },
   { key: 'prixHT',     label: 'Prix HT',       defaultVisible: true },
   { key: 'description',label: 'Description',   defaultVisible: true },
   { key: 'clientNom',  label: 'Client source', defaultVisible: true },
@@ -200,6 +201,7 @@ function exportVeilleExcel(concurrents: Concurrent[], produits: ConcurrentProdui
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(produits.map(p => ({
     'Concurrent': concMap[p.concurrentId] || '', 'Produit': p.nom,
     'Référence': p.reference || '', 'Catégorie': p.categorie || '',
+    'Quantité': p.quantite != null ? p.quantite : '',
     'Prix HT': p.prixHT != null ? p.prixHT : '', 'Description': p.description || '',
     'Client source': p.clientNom || '', 'Saisi par': p.informateur || p.createdByEmail || '',
     'Date': p.dateRenseignement || p.createdAt,
@@ -224,7 +226,8 @@ function exportByEmail(concurrents: Concurrent[], produits: ConcurrentProduit[])
   }))), 'Concurrents');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(produits.map(p => ({
     'Concurrent': concMap[p.concurrentId] || '', 'Produit': p.nom,
-    'Catégorie': p.categorie || '', 'Prix HT': p.prixHT != null ? p.prixHT : '',
+    'Catégorie': p.categorie || '', 'Quantité': p.quantite != null ? p.quantite : '',
+    'Prix HT': p.prixHT != null ? p.prixHT : '',
     'Saisi par': p.informateur || p.createdByEmail || '',
   }))), 'Produits');
 
@@ -314,6 +317,7 @@ export default function Produits() {
       case 'concurrent': return concurrents.find(c => c.id === p.concurrentId)?.nom || '';
       case 'reference': return p.reference || '';
       case 'categorie': return p.categorie || '';
+      case 'quantite': return p.quantite != null ? p.quantite : -Infinity;
       case 'prixHT': return p.prixHT != null ? p.prixHT : -Infinity;
       case 'description': return p.description || '';
       case 'clientNom': return p.clientNom || '';
@@ -329,7 +333,7 @@ export default function Produits() {
   // ── Dialog manuel ──
   const [manualOpen, setManualOpen] = useState(false);
   const [editingProd, setEditingProd] = useState<ConcurrentProduit | null>(null);
-  const [form, setForm] = useState({ concurrentId: '', nom: '', reference: '', categorie: '', prixHT: '', description: '', clientNom: '', informateur: '', dateRenseignement: '' });
+  const [form, setForm] = useState({ concurrentId: '', nom: '', reference: '', categorie: '', quantite: '', prixHT: '', description: '', clientNom: '', informateur: '', dateRenseignement: '' });
   const [saving, setSaving] = useState(false);
   const [showNomSuggestions, setShowNomSuggestions] = useState(false);
 
@@ -396,13 +400,13 @@ export default function Produits() {
   // ── CRUD ──
   function openNew() {
     setEditingProd(null);
-    setForm({ concurrentId: concurrents[0]?.id || '', nom: '', reference: '', categorie: '', prixHT: '', description: '', clientNom: '', informateur: displayName || '', dateRenseignement: new Date().toISOString().split('T')[0] });
+    setForm({ concurrentId: concurrents[0]?.id || '', nom: '', reference: '', categorie: '', quantite: '', prixHT: '', description: '', clientNom: '', informateur: displayName || '', dateRenseignement: new Date().toISOString().split('T')[0] });
     setManualOpen(true);
   }
 
   function openEdit(p: ConcurrentProduit) {
     setEditingProd(p);
-    setForm({ concurrentId: p.concurrentId, nom: p.nom, reference: p.reference || '', categorie: p.categorie || '', prixHT: p.prixHT != null ? String(p.prixHT) : '', description: p.description || '', clientNom: p.clientNom || '', informateur: p.informateur || '', dateRenseignement: p.dateRenseignement || '' });
+    setForm({ concurrentId: p.concurrentId, nom: p.nom, reference: p.reference || '', categorie: p.categorie || '', quantite: p.quantite != null ? String(p.quantite) : '', prixHT: p.prixHT != null ? String(p.prixHT) : '', description: p.description || '', clientNom: p.clientNom || '', informateur: p.informateur || '', dateRenseignement: p.dateRenseignement || '' });
     setManualOpen(true);
   }
 
@@ -410,9 +414,11 @@ export default function Produits() {
     if (!form.nom.trim() || !form.concurrentId) return;
     setSaving(true);
     const prixHT = form.prixHT ? parseFloat(form.prixHT.replace(',', '.')) : undefined;
+    const quantite = form.quantite ? parseFloat(form.quantite.replace(',', '.')) : undefined;
     const extra = {
       reference: form.reference || undefined,
       categorie: form.categorie || undefined,
+      quantite,
       prixHT,
       description: form.description || undefined,
       clientNom: form.clientNom || undefined,
@@ -672,6 +678,9 @@ export default function Produits() {
                         {p.categorie ? <Badge variant="outline">{p.categorie}</Badge> : <span className="text-muted-foreground">—</span>}
                       </td>
                     );
+                    if (col.key === 'quantite') return (
+                      <td key="quantite" className="px-3 py-2.5 text-right tabular-nums" style={cols.widthStyle('quantite')}>{p.quantite != null ? p.quantite.toLocaleString('fr-FR') : '—'}</td>
+                    );
                     if (col.key === 'prixHT') return (
                       <td key="prixHT" className="px-3 py-2.5 text-right font-medium" style={cols.widthStyle('prixHT')}>
                         {p.prixHT != null ? p.prixHT.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }) : '—'}
@@ -763,9 +772,15 @@ export default function Produits() {
                 <Input value={form.categorie} onChange={e => setForm(f => ({ ...f, categorie: e.target.value }))} />
               </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>Prix HT (€)</Label>
-              <Input type="number" step="0.01" value={form.prixHT} onChange={e => setForm(f => ({ ...f, prixHT: e.target.value }))} />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Quantité</Label>
+                <Input type="number" step="any" value={form.quantite} onChange={e => setForm(f => ({ ...f, quantite: e.target.value }))} placeholder="Ex : 1, 25, 1000…" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Prix HT (€)</Label>
+                <Input type="number" step="0.01" value={form.prixHT} onChange={e => setForm(f => ({ ...f, prixHT: e.target.value }))} />
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label>Description</Label>
