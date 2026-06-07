@@ -1,5 +1,5 @@
-import { useState, useRef, useCallback, useMemo } from 'react';
-import { Plus, Search, Upload, Loader2, Check, X, Pencil, Trash2 } from 'lucide-react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import { Plus, Search, Upload, Loader2, Check, X, Pencil, Trash2, SlidersHorizontal, Columns2, RotateCcw, Filter } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { formatCreateur } from '@/lib/concurrents';
 import type { ConcurrentProduit } from '@/lib/concurrents';
@@ -13,11 +13,45 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { useTableColumns } from '@/hooks/useTableColumns';
+import ColResizeHandle from '@/components/ColResizeHandle';
+import RowActionsMenu from '@/components/RowActionsMenu';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.mjs',
   import.meta.url,
 ).toString();
+
+// ── Colonnes ────────────────────────────────────────────────────────────────
+const ALL_COL_KEYS = ['nom', 'concurrent', 'reference', 'categorie', 'prixHT', 'description', 'clientNom', 'informateur', 'date'] as const;
+type ColKey = typeof ALL_COL_KEYS[number];
+
+const COL_DEFS: { key: ColKey; label: string; defaultVisible: boolean }[] = [
+  { key: 'nom',        label: 'Produit',       defaultVisible: true },
+  { key: 'concurrent', label: 'Concurrent',    defaultVisible: true },
+  { key: 'reference',  label: 'Référence',     defaultVisible: true },
+  { key: 'categorie',  label: 'Catégorie',     defaultVisible: true },
+  { key: 'prixHT',     label: 'Prix HT',       defaultVisible: true },
+  { key: 'description',label: 'Description',   defaultVisible: true },
+  { key: 'clientNom',  label: 'Client source', defaultVisible: true },
+  { key: 'informateur',label: 'Saisi par',     defaultVisible: true },
+  { key: 'date',       label: 'Date',          defaultVisible: true },
+];
+
+const VIS_KEY = 'veille_prod_visible_cols';
+
+function loadVisibleCols(): Set<ColKey> {
+  try {
+    const s = localStorage.getItem(VIS_KEY);
+    if (s) {
+      const arr = JSON.parse(s) as ColKey[];
+      if (Array.isArray(arr) && arr.length > 0) return new Set(arr);
+    }
+  } catch { /* ignore */ }
+  return new Set(COL_DEFS.filter(c => c.defaultVisible).map(c => c.key));
+}
+
+// ── AI helpers (inchangés) ─────────────────────────────────────────────────
 
 interface ExtractedProduit {
   _id: string;
@@ -29,7 +63,6 @@ interface ExtractedProduit {
   selected: boolean;
 }
 
-// v2
 const PROMPT = `Extrais toutes les lignes produit/article/prestation de ce document avec leur prix.
 Retourne un JSON array (uniquement, sans markdown) : [{"nom":"...","reference":"...","categorie":"...","prixHT":"...","description":"..."}]
 Si un champ est absent, utilise une chaîne vide. prixHT doit être un nombre décimal (ex: "12.50").`;
@@ -44,7 +77,6 @@ async function callAI(texte: string): Promise<ExtractedProduit[]> {
   const content = `${PROMPT}\n\n${texte.slice(0, 12000)}`;
   const providerErrors: string[] = [];
 
-  // Groq
   const groqKey = __GROQ_KEY__;
   if (groqKey) {
     try {
@@ -58,14 +90,12 @@ async function callAI(texte: string): Promise<ExtractedProduit[]> {
       const text = d.choices?.[0]?.message?.content || '';
       const results = parseJsonArray(text);
       if (results.length > 0) return results;
-      // Réponse valide mais vide → continuer vers le provider suivant
     } catch (e: any) {
       providerErrors.push(`Groq: ${e.message}`);
       console.warn('[Groq]', e.message);
     }
   }
 
-  // Gemini
   const gemKey = __GEMINI_KEY__;
   if (gemKey) {
     try {
@@ -85,7 +115,6 @@ async function callAI(texte: string): Promise<ExtractedProduit[]> {
     }
   }
 
-  // OpenRouter
   const orKey = __OPENROUTER_KEY__;
   if (orKey) {
     try {
@@ -103,21 +132,15 @@ async function callAI(texte: string): Promise<ExtractedProduit[]> {
     }
   }
 
-  // Aucune clé configurée
   if (!groqKey && !gemKey && !orKey) {
     throw new Error('Aucune clé IA configurée. Ajoutez VITE_GROQ_API_KEY, VITE_GEMINI_API_KEY ou VITE_OPENROUTER_API_KEY dans les variables d\'environnement Vercel. Pour un fichier CSV/Excel, l\'import sans IA est possible — renommez les colonnes : nom, reference, categorie, prixHT.');
   }
-
-  // Clés présentes mais tous les appels ont échoué
   if (providerErrors.length > 0) {
     throw new Error(`Erreur API IA — ${providerErrors.join(' | ')}`);
   }
-
-  // Clés présentes, appels réussis mais aucun résultat extrait
   return [];
 }
 
-/** Essai d'import direct CSV/Excel sans IA (colonnes nommées). */
 function tryDirectParse(texte: string): ExtractedProduit[] {
   const lines = texte.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   if (lines.length < 2) return [];
@@ -149,7 +172,6 @@ async function extractText(file: File): Promise<string> {
     const { texte } = await parseExcel(file);
     return texte;
   }
-  // PDF via pdfjs
   const buffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
   const pages: string[] = [];
@@ -161,32 +183,58 @@ async function extractText(file: File): Promise<string> {
   return pages.join('\n\n');
 }
 
+// ── Composant principal ────────────────────────────────────────────────────
+
 export default function Produits() {
   const { concurrents, produits, loading, addProduit, updateProduit, deleteProduit } = useConcurrentsCtx();
   const { canEdit, displayName } = useRole();
 
+  // ── Colonnes ──
+  const cols = useTableColumns<ColKey>('veille_prod_table', ALL_COL_KEYS);
+  const [visibleCols, setVisibleColsState] = useState<Set<ColKey>>(loadVisibleCols);
+  const [colVizOpen, setColVizOpen] = useState(false);
+  const colVizRef = useRef<HTMLDivElement>(null);
+
+  function toggleCol(k: ColKey) {
+    setVisibleColsState(prev => {
+      const n = new Set(prev);
+      n.has(k) ? n.delete(k) : n.add(k);
+      try { localStorage.setItem(VIS_KEY, JSON.stringify([...n])); } catch { /* ignore */ }
+      return n;
+    });
+  }
+
+  // Fermer le panel colonnes au clic extérieur
+  useEffect(() => {
+    if (!colVizOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (!colVizRef.current?.contains(e.target as Node)) setColVizOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [colVizOpen]);
+
+  // ── Filtres inline ──
+  const [filters, setFilters] = useState<Partial<Record<ColKey, string>>>({});
+  const [openFilterCol, setOpenFilterCol] = useState<ColKey | null>(null);
+
+  function setFilter(k: ColKey, v: string) {
+    setFilters(prev => v ? { ...prev, [k]: v } : (({ [k]: _, ...rest }) => rest)(prev as Record<ColKey, string>));
+  }
+
+  const activeFilters = Object.entries(filters) as [ColKey, string][];
+
+  // ── Recherche globale ──
   const [search, setSearch] = useState('');
   const [filterConc, setFilterConc] = useState('all');
 
-  // Manual dialog
+  // ── Dialog manuel ──
   const [manualOpen, setManualOpen] = useState(false);
   const [editingProd, setEditingProd] = useState<ConcurrentProduit | null>(null);
   const [form, setForm] = useState({ concurrentId: '', nom: '', reference: '', categorie: '', prixHT: '', description: '', clientNom: '', informateur: '', dateRenseignement: '' });
   const [saving, setSaving] = useState(false);
-
-  // Import dialog
-  const [importOpen, setImportOpen] = useState(false);
-  const [importConcId, setImportConcId] = useState('');
-  const [analysing, setAnalysing] = useState(false);
-  const [extracted, setExtracted] = useState<ExtractedProduit[]>([]);
-  const [importError, setImportError] = useState('');
-  const [dragOver, setDragOver] = useState(false);
-  const dragCounter = useRef(0);
-
-  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showNomSuggestions, setShowNomSuggestions] = useState(false);
 
-  // Unique product names matching current input (for autocomplete)
   const nomSuggestions = useMemo(() => {
     const q = form.nom.trim().toLowerCase();
     if (!q) return [];
@@ -196,26 +244,57 @@ export default function Produits() {
 
   function selectNomSuggestion(nom: string) {
     const match = produits.find(p => p.nom === nom);
-    setForm(f => ({
-      ...f,
-      nom,
-      reference: f.reference || match?.reference || '',
-      categorie: f.categorie || match?.categorie || '',
-      // prixHT intentionally left as-is — user enters the new price
-    }));
+    setForm(f => ({ ...f, nom, reference: f.reference || match?.reference || '', categorie: f.categorie || match?.categorie || '' }));
     setShowNomSuggestions(false);
   }
 
-  const filtered = produits.filter(p => {
-    const matchSearch = p.nom.toLowerCase().includes(search.toLowerCase()) ||
-      (p.reference || '').toLowerCase().includes(search.toLowerCase()) ||
-      (p.categorie || '').toLowerCase().includes(search.toLowerCase());
-    const matchConc = filterConc === 'all' || p.concurrentId === filterConc;
-    return matchSearch && matchConc;
-  });
+  // ── Import tarif ──
+  const [importOpen, setImportOpen] = useState(false);
+  const [importConcId, setImportConcId] = useState('');
+  const [analysing, setAnalysing] = useState(false);
+  const [extracted, setExtracted] = useState<ExtractedProduit[]>([]);
+  const [importError, setImportError] = useState('');
+  const [dragOver, setDragOver] = useState(false);
+  const dragCounter = useRef(0);
 
-  // ── Manual CRUD ──
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
+  // ── Filtrage ──
+  const filtered = useMemo(() => {
+    return produits.filter(p => {
+      // Recherche globale
+      if (search) {
+        const q = search.toLowerCase();
+        const ok = p.nom.toLowerCase().includes(q) ||
+          (p.reference || '').toLowerCase().includes(q) ||
+          (p.categorie || '').toLowerCase().includes(q);
+        if (!ok) return false;
+      }
+      // Filtre concurrent dropdown
+      if (filterConc !== 'all' && p.concurrentId !== filterConc) return false;
+      // Filtres colonnes inline
+      for (const [key, val] of activeFilters) {
+        if (!val) continue;
+        const q = val.toLowerCase();
+        let cell = '';
+        if (key === 'nom') cell = p.nom;
+        else if (key === 'concurrent') cell = concurrents.find(c => c.id === p.concurrentId)?.nom || '';
+        else if (key === 'reference') cell = p.reference || '';
+        else if (key === 'categorie') cell = p.categorie || '';
+        else if (key === 'prixHT') cell = p.prixHT != null ? String(p.prixHT) : '';
+        else if (key === 'description') cell = p.description || '';
+        else if (key === 'clientNom') cell = p.clientNom || '';
+        else if (key === 'informateur') cell = p.informateur || formatCreateur(p.createdByEmail);
+        else if (key === 'date') cell = p.dateRenseignement || p.createdAt;
+        if (!cell.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [produits, search, filterConc, activeFilters, concurrents]);
+
+  const concName = (id: string) => concurrents.find(c => c.id === id)?.nom || '—';
+
+  // ── CRUD ──
   function openNew() {
     setEditingProd(null);
     setForm({ concurrentId: concurrents[0]?.id || '', nom: '', reference: '', categorie: '', prixHT: '', description: '', clientNom: '', informateur: displayName || '', dateRenseignement: new Date().toISOString().split('T')[0] });
@@ -250,36 +329,23 @@ export default function Produits() {
     setManualOpen(false);
   }
 
-  // ── Import tarif ──
-
   const handleFiles = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const file = files[0];
-    if (!file.name.match(/\.(pdf|xlsx?|csv|ods)$/i)) {
-      setImportError('Format non supporté. Utilisez PDF, Excel ou CSV.');
-      return;
-    }
+    if (!file.name.match(/\.(pdf|xlsx?|csv|ods)$/i)) { setImportError('Format non supporté. Utilisez PDF, Excel ou CSV.'); return; }
     setAnalysing(true);
     setImportError('');
     setExtracted([]);
     try {
       const text = await extractText(file);
-      // Essai IA en premier
       const hasKey = !!(__GROQ_KEY__ || __GEMINI_KEY__ || __OPENROUTER_KEY__);
       let results: ExtractedProduit[] = [];
-      if (hasKey) {
-        results = await callAI(text);
-      }
-      // Fallback : parse direct pour CSV/Excel si pas d'IA ou résultat vide
-      if (results.length === 0 && file.name.match(/\.(xlsx?|csv|ods)$/i)) {
-        results = tryDirectParse(text);
-      }
+      if (hasKey) results = await callAI(text);
+      if (results.length === 0 && file.name.match(/\.(xlsx?|csv|ods)$/i)) results = tryDirectParse(text);
       if (results.length === 0) {
-        if (!hasKey) {
-          setImportError('Aucune clé IA configurée. Pour un PDF, ajoutez VITE_GROQ_API_KEY dans Vercel. Pour un CSV/Excel, renommez les colonnes : nom, reference, categorie, prixHT.');
-        } else {
-          setImportError('Aucun produit trouvé dans ce document. Vérifiez le format du fichier.');
-        }
+        setImportError(!hasKey
+          ? 'Aucune clé IA configurée. Pour un PDF, ajoutez VITE_GROQ_API_KEY dans Vercel. Pour un CSV/Excel, renommez les colonnes : nom, reference, categorie, prixHT.'
+          : 'Aucun produit trouvé dans ce document. Vérifiez le format du fichier.');
       } else {
         setExtracted(results.map((r, i) => ({ ...r, _id: String(i), selected: true })));
       }
@@ -294,29 +360,23 @@ export default function Produits() {
     if (!importConcId || toImport.length === 0) return;
     setSaving(true);
     for (const p of toImport) {
-      await addProduit({
-        concurrentId: importConcId,
-        nom: p.nom,
-        reference: p.reference || undefined,
-        categorie: p.categorie || undefined,
-        prixHT: p.prixHT ? parseFloat(p.prixHT.replace(',', '.')) : undefined,
-        description: p.description || undefined,
-      });
+      await addProduit({ concurrentId: importConcId, nom: p.nom, reference: p.reference || undefined, categorie: p.categorie || undefined, prixHT: p.prixHT ? parseFloat(p.prixHT.replace(',', '.')) : undefined, description: p.description || undefined });
     }
     setSaving(false);
     setImportOpen(false);
     setExtracted([]);
   }
 
-  const concName = (id: string) => concurrents.find(c => c.id === id)?.nom || '—';
-
   if (loading) {
     return <div className="flex items-center justify-center h-64"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
   }
 
+  // Colonnes visibles ordonnées (sans la col actions qui est toujours en dernier)
+  const orderedCols = cols.ordered(COL_DEFS, k => visibleCols.has(k));
+
   return (
     <div className="space-y-4">
-      {/* Header */}
+      {/* ── En-tête ───────────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div>
           <h1 className="text-2xl font-bold">Produits concurrents</h1>
@@ -325,18 +385,16 @@ export default function Produits() {
         {canEdit && (
           <div className="sm:ml-auto flex gap-2">
             <Button size="sm" variant="outline" onClick={() => { setImportConcId(concurrents[0]?.id || ''); setExtracted([]); setImportError(''); setImportOpen(true); }} className="gap-1.5">
-              <Upload className="h-4 w-4" />
-              Importer tarif
+              <Upload className="h-4 w-4" /> Importer tarif
             </Button>
             <Button size="sm" onClick={openNew} className="gap-1.5">
-              <Plus className="h-4 w-4" />
-              Ajouter
+              <Plus className="h-4 w-4" /> Ajouter
             </Button>
           </div>
         )}
       </div>
 
-      {/* Filters */}
+      {/* ── Barre filtres ─────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative w-full sm:flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -353,79 +411,171 @@ export default function Produits() {
         </Select>
       </div>
 
-      {/* Table */}
+      {/* ── Filtres actifs ────────────────────────────────────────────────── */}
+      {activeFilters.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          {activeFilters.map(([k, v]) => (
+            <span key={k} className="inline-flex items-center gap-1 bg-primary/10 text-primary text-xs px-2 py-0.5 rounded-full">
+              {COL_DEFS.find(c => c.key === k)?.label} : {v}
+              <button onClick={() => setFilter(k, '')} className="hover:text-primary/70">
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+          <button onClick={() => setFilters({})} className="text-xs text-muted-foreground hover:text-foreground underline ml-1">
+            Effacer tout
+          </button>
+        </div>
+      )}
+
+      {/* ── Tableau ───────────────────────────────────────────────────────── */}
       {filtered.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
           <p className="text-lg font-medium">Aucun produit</p>
           {canEdit && <p className="text-sm mt-1">Ajoutez manuellement ou importez un tarif.</p>}
         </div>
       ) : (
-        <div className="border rounded-lg overflow-hidden">
+        <div className="border rounded-lg overflow-auto">
           <table className="w-full text-sm">
             <thead className="bg-muted/50 border-b">
               <tr>
-                <th className="text-left px-4 py-2.5 font-medium">Produit</th>
-                <th className="text-left px-4 py-2.5 font-medium hidden sm:table-cell">Concurrent</th>
-                <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">Référence</th>
-                <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">Catégorie</th>
-                <th className="text-right px-4 py-2.5 font-medium">Prix HT</th>
-                <th className="text-left px-4 py-2.5 font-medium hidden lg:table-cell">Description</th>
-                <th className="text-left px-4 py-2.5 font-medium hidden lg:table-cell">Client source</th>
-                <th className="text-left px-4 py-2.5 font-medium hidden lg:table-cell">Saisi par</th>
-                <th className="text-left px-4 py-2.5 font-medium hidden md:table-cell">Date</th>
-                {canEdit && <th className="w-20" />}
+                {orderedCols.map(col => (
+                  <th
+                    key={col.key}
+                    className={cn(
+                      'relative text-left px-3 py-0 font-medium select-none',
+                      cols.dragKey === col.key && 'opacity-50',
+                      cols.dragOverKey === col.key && 'bg-primary/10',
+                    )}
+                    style={cols.widthStyle(col.key)}
+                    {...cols.thProps(col.key)}
+                  >
+                    <div className="flex items-center gap-1 py-2.5 pr-3">
+                      <span className="truncate">{col.label}</span>
+                      {/* Icône filtre */}
+                      <button
+                        onClick={e => { e.stopPropagation(); setOpenFilterCol(prev => prev === col.key ? null : col.key); }}
+                        className={cn(
+                          'p-0.5 rounded shrink-0 transition-colors',
+                          (filters[col.key] || openFilterCol === col.key)
+                            ? 'text-primary'
+                            : 'text-muted-foreground/50 hover:text-muted-foreground',
+                        )}
+                        title="Filtrer"
+                      >
+                        <Filter className="h-3 w-3" />
+                      </button>
+                    </div>
+                    {/* Input filtre inline */}
+                    {openFilterCol === col.key && (
+                      <div className="pb-1.5 px-0.5" onClick={e => e.stopPropagation()}>
+                        <Input
+                          autoFocus
+                          className="h-6 text-xs"
+                          placeholder={`Filtrer ${col.label}…`}
+                          value={filters[col.key] || ''}
+                          onChange={e => setFilter(col.key, e.target.value)}
+                          onKeyDown={e => e.key === 'Escape' && setOpenFilterCol(null)}
+                        />
+                      </div>
+                    )}
+                    <ColResizeHandle {...cols.resizeHandleProps(col.key)} />
+                  </th>
+                ))}
+                {/* Dernière colonne : actions + sélecteur de colonnes */}
+                <th className="relative px-2 py-2.5 w-16">
+                  <div ref={colVizRef} className="relative flex justify-end">
+                    <button
+                      onClick={() => setColVizOpen(o => !o)}
+                      title="Colonnes visibles"
+                      className={cn('p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors', colVizOpen && 'bg-muted text-foreground')}
+                    >
+                      <Columns2 className="h-4 w-4" />
+                    </button>
+                    {colVizOpen && (
+                      <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-xl shadow-xl p-3 w-52 space-y-1">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Colonnes</span>
+                          <button
+                            onClick={() => { cols.reset(); setVisibleColsState(new Set(COL_DEFS.map(c => c.key))); try { localStorage.removeItem(VIS_KEY); } catch { /* ignore */ } }}
+                            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+                          >
+                            <RotateCcw className="h-3 w-3" /> Réinitialiser
+                          </button>
+                        </div>
+                        {COL_DEFS.map(col => (
+                          <label key={col.key} className="flex items-center gap-2 py-1 px-1.5 rounded hover:bg-muted/50 cursor-pointer text-sm">
+                            <input
+                              type="checkbox"
+                              checked={visibleCols.has(col.key)}
+                              onChange={() => toggleCol(col.key)}
+                              className="rounded accent-primary"
+                            />
+                            {col.label}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {filtered.map(p => (
                 <tr
                   key={p.id}
-                  className={cn('transition-colors', canEdit ? 'hover:bg-muted/30 cursor-pointer' : 'hover:bg-muted/30')}
+                  className={cn('transition-colors hover:bg-muted/30', canEdit && 'cursor-pointer')}
                   onClick={canEdit ? () => openEdit(p) : undefined}
                 >
-                  <td className="px-4 py-2.5">
-                    <p className="font-medium">{p.nom}</p>
-                    {p.reference && <p className="md:hidden text-xs text-muted-foreground">{p.reference}</p>}
-                    <p className="text-xs text-muted-foreground sm:hidden">{concName(p.concurrentId)}</p>
-                    {p.categorie && <p className="md:hidden mt-0.5"><Badge variant="outline" className="text-[10px] py-0 h-4">{p.categorie}</Badge></p>}
-                    {p.description && <p className="lg:hidden text-xs text-muted-foreground mt-0.5 truncate max-w-48">{p.description}</p>}
-                    {(p.clientNom || p.informateur) && (
-                      <p className="text-xs text-muted-foreground mt-0.5 lg:hidden">
-                        {p.clientNom && <span>📍 {p.clientNom}</span>}
-                        {p.clientNom && p.informateur && <span className="mx-1">·</span>}
-                        {p.informateur && <span>👤 {p.informateur}</span>}
-                      </p>
+                  {orderedCols.map(col => {
+                    if (col.key === 'nom') return (
+                      <td key="nom" className="px-3 py-2.5" style={cols.widthStyle('nom')}>
+                        <p className="font-medium">{p.nom}</p>
+                      </td>
+                    );
+                    if (col.key === 'concurrent') return (
+                      <td key="concurrent" className="px-3 py-2.5 text-muted-foreground" style={cols.widthStyle('concurrent')}>{concName(p.concurrentId)}</td>
+                    );
+                    if (col.key === 'reference') return (
+                      <td key="reference" className="px-3 py-2.5 text-xs text-muted-foreground font-mono" style={cols.widthStyle('reference')}>{p.reference || '—'}</td>
+                    );
+                    if (col.key === 'categorie') return (
+                      <td key="categorie" className="px-3 py-2.5" style={cols.widthStyle('categorie')}>
+                        {p.categorie ? <Badge variant="outline">{p.categorie}</Badge> : <span className="text-muted-foreground">—</span>}
+                      </td>
+                    );
+                    if (col.key === 'prixHT') return (
+                      <td key="prixHT" className="px-3 py-2.5 text-right font-medium" style={cols.widthStyle('prixHT')}>
+                        {p.prixHT != null ? p.prixHT.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }) : '—'}
+                      </td>
+                    );
+                    if (col.key === 'description') return (
+                      <td key="description" className="px-3 py-2.5 text-muted-foreground max-w-40 truncate" style={cols.widthStyle('description')}>{p.description || '—'}</td>
+                    );
+                    if (col.key === 'clientNom') return (
+                      <td key="clientNom" className="px-3 py-2.5 text-xs text-muted-foreground" style={cols.widthStyle('clientNom')}>{p.clientNom || '—'}</td>
+                    );
+                    if (col.key === 'informateur') return (
+                      <td key="informateur" className="px-3 py-2.5 text-xs text-muted-foreground" style={cols.widthStyle('informateur')}>{p.informateur || formatCreateur(p.createdByEmail)}</td>
+                    );
+                    if (col.key === 'date') return (
+                      <td key="date" className="px-3 py-2.5 text-xs text-muted-foreground" style={cols.widthStyle('date')}>
+                        {new Date((p.dateRenseignement || p.createdAt) + 'T00:00:00').toLocaleDateString('fr-FR')}
+                      </td>
+                    );
+                    return null;
+                  })}
+                  <td className="px-2 py-2.5 w-16" onClick={e => e.stopPropagation()}>
+                    {canEdit && (
+                      <div className="flex justify-end">
+                        <RowActionsMenu actions={[
+                          { icon: <Pencil className="w-3.5 h-3.5" />, label: 'Modifier', onClick: () => openEdit(p) },
+                          { icon: <Trash2 className="w-3.5 h-3.5" />, label: 'Supprimer', danger: true, onClick: () => setDeleteId(p.id) },
+                        ]} />
+                      </div>
                     )}
                   </td>
-                  <td className="px-4 py-2.5 hidden sm:table-cell text-muted-foreground">{concName(p.concurrentId)}</td>
-                  <td className="px-4 py-2.5 hidden md:table-cell text-xs text-muted-foreground font-mono">{p.reference || '—'}</td>
-                  <td className="px-4 py-2.5 hidden md:table-cell">
-                    {p.categorie ? <Badge variant="outline">{p.categorie}</Badge> : <span className="text-muted-foreground">—</span>}
-                  </td>
-                  <td className="px-4 py-2.5 text-right">
-                    <p className="font-medium">{p.prixHT != null ? p.prixHT.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }) : '—'}</p>
-                    <p className="md:hidden text-xs text-muted-foreground">
-                      {new Date((p.dateRenseignement || p.createdAt) + 'T00:00:00').toLocaleDateString('fr-FR')}
-                    </p>
-                  </td>
-                  <td className="px-4 py-2.5 hidden lg:table-cell text-sm text-muted-foreground max-w-40 truncate">{p.description || '—'}</td>
-                  <td className="px-4 py-2.5 hidden lg:table-cell text-xs text-muted-foreground">{p.clientNom || '—'}</td>
-                  <td className="px-4 py-2.5 hidden lg:table-cell text-xs text-muted-foreground">{p.informateur || formatCreateur(p.createdByEmail)}</td>
-                  <td className="px-4 py-2.5 hidden md:table-cell text-xs text-muted-foreground">
-                    {new Date((p.dateRenseignement || p.createdAt) + 'T00:00:00').toLocaleDateString('fr-FR')}
-                  </td>
-                  {canEdit && (
-                    <td className="px-2 py-2.5" onClick={e => e.stopPropagation()}>
-                      <div className="flex gap-1 justify-end">
-                        <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-7 sm:w-7" onClick={() => openEdit(p)}>
-                          <Pencil className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-7 sm:w-7 text-destructive hover:text-destructive" onClick={() => setDeleteId(p.id)}>
-                          <Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-                        </Button>
-                      </div>
-                    </td>
-                  )}
                 </tr>
               ))}
             </tbody>
@@ -433,7 +583,7 @@ export default function Produits() {
         </div>
       )}
 
-      {/* Manual Dialog */}
+      {/* ── Dialog manuel ─────────────────────────────────────────────────── */}
       <Dialog open={manualOpen} onOpenChange={setManualOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -469,9 +619,7 @@ export default function Produits() {
                         onMouseDown={() => selectNomSuggestion(nom)}
                       >
                         <span className="font-medium truncate">{nom}</span>
-                        {match?.categorie && (
-                          <span className="text-xs text-muted-foreground shrink-0">{match.categorie}</span>
-                        )}
+                        {match?.categorie && <span className="text-xs text-muted-foreground shrink-0">{match.categorie}</span>}
                       </button>
                     );
                   })}
@@ -524,18 +672,13 @@ export default function Produits() {
         </DialogContent>
       </Dialog>
 
-      {/* Import Dialog */}
+      {/* ── Dialog import tarif ───────────────────────────────────────────── */}
       <Dialog open={importOpen} onOpenChange={v => { if (!analysing) setImportOpen(v); }}>
-        <DialogContent
-          className="max-w-2xl max-h-[90vh] flex flex-col"
-          onInteractOutside={e => e.preventDefault()}
-        >
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col" onInteractOutside={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>Importer un tarif concurrent</DialogTitle>
           </DialogHeader>
-
           <div className="flex-1 overflow-y-auto space-y-4">
-            {/* Concurrent selector */}
             <div className="space-y-1.5">
               <Label>Concurrent *</Label>
               <Select value={importConcId} onValueChange={setImportConcId}>
@@ -543,8 +686,6 @@ export default function Produits() {
                 <SelectContent>{concurrents.map(c => <SelectItem key={c.id} value={c.id}>{c.nom}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-
-            {/* Drop zone — label htmlFor active le file input sans click() programmatique */}
             {extracted.length === 0 && !analysing && (
               <label
                 htmlFor="tarif-file-input"
@@ -557,30 +698,21 @@ export default function Produits() {
                 <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
                 <p className="font-medium">Glissez votre tarif ici</p>
                 <p className="text-sm text-muted-foreground mt-1">PDF, Excel (.xlsx, .xls), CSV — analyse IA automatique</p>
-                <input
-                  id="tarif-file-input"
-                  type="file"
-                  className="hidden"
-                  accept=".pdf,.xlsx,.xls,.csv,.ods"
-                  onChange={e => { handleFiles(e.target.files); e.target.value = ''; }}
-                />
+                <input id="tarif-file-input" type="file" className="hidden" accept=".pdf,.xlsx,.xls,.csv,.ods" onChange={e => { handleFiles(e.target.files); e.target.value = ''; }} />
               </label>
             )}
-
             {analysing && (
               <div className="flex flex-col items-center justify-center py-12 gap-3">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 <p className="text-sm text-muted-foreground">Analyse du document en cours…</p>
               </div>
             )}
-
             {importError && (
               <div className="bg-destructive/10 border border-destructive/20 rounded-md px-4 py-3 text-sm text-destructive">
                 {importError}
-                <button className="ml-2 underline" onClick={() => { setImportError(''); }}>Réessayer</button>
+                <button className="ml-2 underline" onClick={() => setImportError('')}>Réessayer</button>
               </div>
             )}
-
             {extracted.length > 0 && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -610,18 +742,10 @@ export default function Produits() {
                           <td className="px-3 py-2">
                             <input type="checkbox" checked={p.selected} onChange={e => setExtracted(ex => ex.map(x => x._id === p._id ? { ...x, selected: e.target.checked } : x))} className="rounded" />
                           </td>
-                          <td className="px-3 py-2">
-                            <Input value={p.nom} onChange={e => setExtracted(ex => ex.map(x => x._id === p._id ? { ...x, nom: e.target.value } : x))} className="h-7 text-xs" />
-                          </td>
-                          <td className="px-3 py-2 hidden sm:table-cell">
-                            <Input value={p.reference} onChange={e => setExtracted(ex => ex.map(x => x._id === p._id ? { ...x, reference: e.target.value } : x))} className="h-7 text-xs" />
-                          </td>
-                          <td className="px-3 py-2 hidden md:table-cell">
-                            <Input value={p.categorie} onChange={e => setExtracted(ex => ex.map(x => x._id === p._id ? { ...x, categorie: e.target.value } : x))} className="h-7 text-xs" />
-                          </td>
-                          <td className="px-3 py-2">
-                            <Input value={p.prixHT} onChange={e => setExtracted(ex => ex.map(x => x._id === p._id ? { ...x, prixHT: e.target.value } : x))} className="h-7 text-xs text-right w-24 ml-auto" />
-                          </td>
+                          <td className="px-3 py-2"><Input value={p.nom} onChange={e => setExtracted(ex => ex.map(x => x._id === p._id ? { ...x, nom: e.target.value } : x))} className="h-7 text-xs" /></td>
+                          <td className="px-3 py-2 hidden sm:table-cell"><Input value={p.reference} onChange={e => setExtracted(ex => ex.map(x => x._id === p._id ? { ...x, reference: e.target.value } : x))} className="h-7 text-xs" /></td>
+                          <td className="px-3 py-2 hidden md:table-cell"><Input value={p.categorie} onChange={e => setExtracted(ex => ex.map(x => x._id === p._id ? { ...x, categorie: e.target.value } : x))} className="h-7 text-xs" /></td>
+                          <td className="px-3 py-2"><Input value={p.prixHT} onChange={e => setExtracted(ex => ex.map(x => x._id === p._id ? { ...x, prixHT: e.target.value } : x))} className="h-7 text-xs text-right w-24 ml-auto" /></td>
                         </tr>
                       ))}
                     </tbody>
@@ -630,7 +754,6 @@ export default function Produits() {
               </div>
             )}
           </div>
-
           <DialogFooter className="pt-2 border-t">
             <Button variant="outline" onClick={() => setImportOpen(false)} disabled={saving}>Annuler</Button>
             {extracted.length > 0 && (
@@ -644,7 +767,7 @@ export default function Produits() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete confirm */}
+      {/* ── Confirmation suppression ──────────────────────────────────────── */}
       <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Supprimer ce produit ?</DialogTitle></DialogHeader>
