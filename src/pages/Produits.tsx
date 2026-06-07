@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { Plus, Upload, Loader2, Check, X, Pencil, Trash2, SlidersHorizontal, Columns2, RotateCcw, Filter, ChevronUp, ChevronDown, ChevronsUpDown, MoreHorizontal, Download, Mail } from 'lucide-react';
+import { Plus, Upload, Loader2, Check, X, Pencil, Trash2, SlidersHorizontal, Columns2, RotateCcw, Filter, ChevronUp, ChevronDown, ChevronsUpDown, MoreHorizontal, Download, Mail, LayoutList, Table2 } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
@@ -274,6 +274,20 @@ export default function Produits() {
   const [colVizOpen, setColVizOpen] = useState(false);
   const colVizRef = useRef<HTMLDivElement>(null);
 
+  // ── Mode d'affichage (tableau / liste) ──
+  const [viewMode, setViewModeState] = useState<'tableau' | 'liste'>(() => {
+    try {
+      const v = localStorage.getItem('veille_prod_view');
+      if (v === 'liste' || v === 'tableau') return v;
+    } catch { /* ignore */ }
+    // Défaut : liste sur mobile, tableau sur desktop
+    return typeof window !== 'undefined' && window.innerWidth < 768 ? 'liste' : 'tableau';
+  });
+  function setViewMode(v: 'tableau' | 'liste') {
+    setViewModeState(v);
+    try { localStorage.setItem('veille_prod_view', v); } catch { /* ignore */ }
+  }
+
   function toggleCol(k: ColKey) {
     setVisibleColsState(prev => {
       const n = new Set(prev);
@@ -474,6 +488,23 @@ export default function Produits() {
           <p className="text-sm text-muted-foreground">{produits.length} produit{produits.length > 1 ? 's' : ''} référencé{produits.length > 1 ? 's' : ''}</p>
         </div>
         <div className="sm:ml-auto flex gap-2">
+          {/* Bascule liste / tableau */}
+          <div className="flex rounded-lg border border-border overflow-hidden">
+            <button
+              onClick={() => setViewMode('liste')}
+              title="Vue liste"
+              className={cn('flex items-center justify-center px-2.5 h-9 transition-colors', viewMode === 'liste' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted')}
+            >
+              <LayoutList className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('tableau')}
+              title="Vue tableau"
+              className={cn('flex items-center justify-center px-2.5 h-9 transition-colors border-l border-border', viewMode === 'tableau' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted')}
+            >
+              <Table2 className="h-4 w-4" />
+            </button>
+          </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size="sm" variant="outline" className="gap-1.5">
@@ -520,11 +551,55 @@ export default function Produits() {
         </div>
       )}
 
-      {/* ── Tableau ───────────────────────────────────────────────────────── */}
+      {/* ── Contenu ───────────────────────────────────────────────────────── */}
       {filtered.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
           <p className="text-lg font-medium">Aucun produit</p>
           {canEdit && <p className="text-sm mt-1">Ajoutez manuellement ou importez un tarif.</p>}
+        </div>
+      ) : viewMode === 'liste' ? (
+        /* ── Vue liste (cartes) ── */
+        <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map(p => (
+            <div
+              key={p.id}
+              className={cn('relative rounded-xl border border-border bg-card p-3.5 transition-colors', canEdit && 'cursor-pointer hover:border-primary/50 hover:bg-muted/30')}
+              onClick={canEdit ? () => openEdit(p) : undefined}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold leading-tight truncate">{p.nom}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">{concName(p.concurrentId)}</p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <span className="font-semibold text-primary whitespace-nowrap">
+                    {p.prixHT != null ? p.prixHT.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' }) : '—'}
+                  </span>
+                  {canEdit && (
+                    <div onClick={e => e.stopPropagation()}>
+                      <RowActionsMenu actions={[
+                        { icon: <Pencil className="w-3.5 h-3.5" />, label: 'Modifier', onClick: () => openEdit(p) },
+                        { icon: <Trash2 className="w-3.5 h-3.5" />, label: 'Supprimer', danger: true, onClick: () => setDeleteId(p.id) },
+                      ]} />
+                    </div>
+                  )}
+                </div>
+              </div>
+              {(p.categorie || p.quantite != null || p.reference) && (
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  {p.categorie && <Badge variant="outline" className="text-[10px]">{p.categorie}</Badge>}
+                  {p.quantite != null && <Badge variant="secondary" className="text-[10px]">Qté : {p.quantite.toLocaleString('fr-FR')}</Badge>}
+                  {p.reference && <span className="text-[10px] font-mono text-muted-foreground">{p.reference}</span>}
+                </div>
+              )}
+              {p.description && <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{p.description}</p>}
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-2 text-[11px] text-muted-foreground">
+                {p.clientNom && <span>📍 {p.clientNom}</span>}
+                <span>👤 {p.informateur || formatCreateur(p.createdByEmail)}</span>
+                <span className="ml-auto">{new Date((p.dateRenseignement || p.createdAt) + 'T00:00:00').toLocaleDateString('fr-FR')}</span>
+              </div>
+            </div>
+          ))}
         </div>
       ) : (
         <div className="border rounded-lg overflow-auto">
