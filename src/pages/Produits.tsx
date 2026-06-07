@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { Plus, Search, Upload, Loader2, Check, X, Pencil, Trash2, SlidersHorizontal, Columns2, RotateCcw, Filter } from 'lucide-react';
+import { Plus, Search, Upload, Loader2, Check, X, Pencil, Trash2, SlidersHorizontal, Columns2, RotateCcw, Filter, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { formatCreateur } from '@/lib/concurrents';
 import type { ConcurrentProduit } from '@/lib/concurrents';
@@ -224,6 +224,28 @@ export default function Produits() {
 
   const activeFilters = Object.entries(filters) as [ColKey, string][];
 
+  // ── Tri ──
+  const [sort, setSort] = useState<{ col: ColKey; dir: 'asc' | 'desc' } | null>(null);
+  // Clic : asc → desc → aucun
+  function toggleSort(k: ColKey) {
+    setSort(s => s?.col === k ? (s.dir === 'asc' ? { col: k, dir: 'desc' } : null) : { col: k, dir: 'asc' });
+  }
+
+  // Valeur d'une cellule (réutilisée pour filtre + tri).
+  const cellValue = useCallback((p: ConcurrentProduit, key: ColKey): string | number => {
+    switch (key) {
+      case 'nom': return p.nom;
+      case 'concurrent': return concurrents.find(c => c.id === p.concurrentId)?.nom || '';
+      case 'reference': return p.reference || '';
+      case 'categorie': return p.categorie || '';
+      case 'prixHT': return p.prixHT != null ? p.prixHT : -Infinity;
+      case 'description': return p.description || '';
+      case 'clientNom': return p.clientNom || '';
+      case 'informateur': return p.informateur || formatCreateur(p.createdByEmail);
+      case 'date': return p.dateRenseignement || p.createdAt || '';
+    }
+  }, [concurrents]);
+
   // ── Recherche globale ──
   const [search, setSearch] = useState('');
   const [filterConc, setFilterConc] = useState('all');
@@ -259,9 +281,9 @@ export default function Produits() {
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  // ── Filtrage ──
+  // ── Filtrage + tri ──
   const filtered = useMemo(() => {
-    return produits.filter(p => {
+    const result = produits.filter(p => {
       // Recherche globale
       if (search) {
         const q = search.toLowerCase();
@@ -275,22 +297,23 @@ export default function Produits() {
       // Filtres colonnes inline
       for (const [key, val] of activeFilters) {
         if (!val) continue;
-        const q = val.toLowerCase();
-        let cell = '';
-        if (key === 'nom') cell = p.nom;
-        else if (key === 'concurrent') cell = concurrents.find(c => c.id === p.concurrentId)?.nom || '';
-        else if (key === 'reference') cell = p.reference || '';
-        else if (key === 'categorie') cell = p.categorie || '';
-        else if (key === 'prixHT') cell = p.prixHT != null ? String(p.prixHT) : '';
-        else if (key === 'description') cell = p.description || '';
-        else if (key === 'clientNom') cell = p.clientNom || '';
-        else if (key === 'informateur') cell = p.informateur || formatCreateur(p.createdByEmail);
-        else if (key === 'date') cell = p.dateRenseignement || p.createdAt;
-        if (!cell.toLowerCase().includes(q)) return false;
+        const cell = String(cellValue(p, key));
+        if (!cell.toLowerCase().includes(val.toLowerCase())) return false;
       }
       return true;
     });
-  }, [produits, search, filterConc, activeFilters, concurrents]);
+
+    if (sort) {
+      const dir = sort.dir === 'asc' ? 1 : -1;
+      result.sort((a, b) => {
+        const va = cellValue(a, sort.col);
+        const vb = cellValue(b, sort.col);
+        if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+        return String(va).localeCompare(String(vb), 'fr', { numeric: true, sensitivity: 'base' }) * dir;
+      });
+    }
+    return result;
+  }, [produits, search, filterConc, activeFilters, sort, cellValue]);
 
   const concName = (id: string) => concurrents.find(c => c.id === id)?.nom || '—';
 
@@ -452,12 +475,23 @@ export default function Produits() {
                     {...cols.thProps(col.key)}
                   >
                     <div className="flex items-center gap-1 py-2.5 pr-3">
-                      <span className="truncate">{col.label}</span>
+                      {/* Libellé cliquable = tri */}
+                      <button
+                        onClick={e => { e.stopPropagation(); toggleSort(col.key); }}
+                        className="flex items-center gap-1 min-w-0 hover:text-foreground"
+                        title="Trier"
+                      >
+                        <span className="truncate">{col.label}</span>
+                        {(() => {
+                          const SortIcon = sort?.col === col.key ? (sort.dir === 'asc' ? ChevronUp : ChevronDown) : ChevronsUpDown;
+                          return <SortIcon className={cn('h-3 w-3 shrink-0', sort?.col === col.key ? 'text-primary' : 'opacity-40')} />;
+                        })()}
+                      </button>
                       {/* Icône filtre */}
                       <button
                         onClick={e => { e.stopPropagation(); setOpenFilterCol(prev => prev === col.key ? null : col.key); }}
                         className={cn(
-                          'p-0.5 rounded shrink-0 transition-colors',
+                          'p-0.5 rounded shrink-0 transition-colors ml-auto',
                           (filters[col.key] || openFilterCol === col.key)
                             ? 'text-primary'
                             : 'text-muted-foreground/50 hover:text-muted-foreground',
