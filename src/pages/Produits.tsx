@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { Plus, Search, Upload, Loader2, Check, X, Pencil, Trash2, SlidersHorizontal, Columns2, RotateCcw, Filter, ChevronUp, ChevronDown, ChevronsUpDown, MoreHorizontal, Download, Mail } from 'lucide-react';
+import { Plus, Upload, Loader2, Check, X, Pencil, Trash2, SlidersHorizontal, Columns2, RotateCcw, Filter, ChevronUp, ChevronDown, ChevronsUpDown, MoreHorizontal, Download, Mail } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
@@ -326,10 +326,6 @@ export default function Produits() {
     }
   }, [concurrents]);
 
-  // ── Recherche globale ──
-  const [search, setSearch] = useState('');
-  const [filterConc, setFilterConc] = useState('all');
-
   // ── Dialog manuel ──
   const [manualOpen, setManualOpen] = useState(false);
   const [editingProd, setEditingProd] = useState<ConcurrentProduit | null>(null);
@@ -364,16 +360,6 @@ export default function Produits() {
   // ── Filtrage + tri ──
   const filtered = useMemo(() => {
     const result = produits.filter(p => {
-      // Recherche globale
-      if (search) {
-        const q = search.toLowerCase();
-        const ok = p.nom.toLowerCase().includes(q) ||
-          (p.reference || '').toLowerCase().includes(q) ||
-          (p.categorie || '').toLowerCase().includes(q);
-        if (!ok) return false;
-      }
-      // Filtre concurrent dropdown
-      if (filterConc !== 'all' && p.concurrentId !== filterConc) return false;
       // Filtres colonnes inline
       for (const [key, val] of activeFilters) {
         if (!val) continue;
@@ -393,7 +379,7 @@ export default function Produits() {
       });
     }
     return result;
-  }, [produits, search, filterConc, activeFilters, sort, cellValue]);
+  }, [produits, activeFilters, sort, cellValue]);
 
   const concName = (id: string) => concurrents.find(c => c.id === id)?.nom || '—';
 
@@ -514,23 +500,6 @@ export default function Produits() {
             </Button>
           )}
         </div>
-      </div>
-
-      {/* ── Barre filtres ─────────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative w-full sm:flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-9" placeholder="Rechercher…" value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <Select value={filterConc} onValueChange={setFilterConc}>
-          <SelectTrigger className="w-full sm:w-48">
-            <SelectValue placeholder="Tous les concurrents" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Tous les concurrents</SelectItem>
-            {concurrents.map(c => <SelectItem key={c.id} value={c.id}>{c.nom}</SelectItem>)}
-          </SelectContent>
-        </Select>
       </div>
 
       {/* ── Filtres actifs ────────────────────────────────────────────────── */}
